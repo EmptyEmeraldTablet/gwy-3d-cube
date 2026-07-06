@@ -18,6 +18,32 @@ function quatOf(r: Rotation): THREE.Quaternion {
   return new THREE.Quaternion().setFromEuler(eulerOf(r));
 }
 
+const AXIS_VECTORS: Record<'x' | 'y' | 'z', THREE.Vector3> = {
+  x: new THREE.Vector3(1, 0, 0),
+  y: new THREE.Vector3(0, 1, 0),
+  z: new THREE.Vector3(0, 0, 1),
+};
+
+/**
+ * 绕世界坐标轴 axis 旋转 deltaDeg（90° 倍数），以四元数在 world-frame 下复合，
+ * 再把结果吸附回最近的 90° 整数对称姿态（normDeg 规整），避免欧拉角分量累加带来的
+ * 旋转顺序依赖与万向锁。与立方体侧 rotateWorldAxis 的语义（世界轴 premultiply）保持一致。
+ * 当仅有一个轴非零（单轴旋转）时，结果与旧实现完全一致。
+ */
+export function rotateByAxis(
+  r: Rotation,
+  axis: 'x' | 'y' | 'z',
+  deltaDeg: number
+): Rotation {
+  const qDelta = new THREE.Quaternion().setFromAxisAngle(
+    AXIS_VECTORS[axis],
+    THREE.MathUtils.degToRad(deltaDeg)
+  );
+  const q = quatOf(r).premultiply(qDelta); // 世界坐标系下复合
+  const e = new THREE.Euler().setFromQuaternion(q);
+  return { x: normDeg(e.x), y: normDeg(e.y), z: normDeg(e.z) };
+}
+
 /** 合成两个 90° 旋转：结果 = a ∘ b（先应用 b，再应用 a）。 */
 export function composeRotation(a: Rotation, b: Rotation): Rotation {
   const q = quatOf(a).multiply(quatOf(b));
@@ -31,9 +57,11 @@ export function rotateGridPos(g: GridPos, r: Rotation): GridPos {
   return { x: Math.round(v.x), y: Math.round(v.y), z: Math.round(v.z) };
 }
 
-/** 逆向旋转（用于把世界坐标反算回图层本地坐标）。 */
+/** 逆向旋转（用于把世界坐标反算回图层本地坐标）。用四元数逆保证多轴下为真逆变换。 */
 export function invertRotation(r: Rotation): Rotation {
-  return { x: -r.x, y: -r.y, z: -r.z };
+  const q = quatOf(r).invert();
+  const e = new THREE.Euler().setFromQuaternion(q);
+  return { x: normDeg(e.x), y: normDeg(e.y), z: normDeg(e.z) };
 }
 
 /**

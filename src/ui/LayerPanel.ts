@@ -262,9 +262,9 @@ export class LayerPanel {
       cGroup.append(line);
     });
     const cBtns = el('div', 'lp-ctl-line');
-    cBtns.append(btn('拾取立方体', () => this.actions.pickRotationCenter(), 'lp-step'));
-    cBtns.append(btn('几何中心', () => this.actions.centerToGeometry(), 'lp-step'));
-    cBtns.append(btn('重置原点', () => this.actions.resetRotationCenter(), 'lp-step'));
+    cBtns.append(btn('拾取立方体', () => this.actions.pickRotationCenter(), 'lp-btn lp-rc-btn'));
+    cBtns.append(btn('几何中心', () => this.actions.centerToGeometry(), 'lp-btn lp-rc-btn'));
+    cBtns.append(btn('重置原点', () => this.actions.resetRotationCenter(), 'lp-btn lp-rc-btn'));
     cGroup.append(cBtns);
     box.append(cGroup);
 

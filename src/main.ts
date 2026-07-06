@@ -19,6 +19,7 @@ import {
   composeRotation,
   invertRotation,
   rotateGridPos,
+  rotateByAxis,
   layerPointToWorld,
 } from './scene/layerMath';
 import { FaceEditor } from './draw/FaceEditor';
@@ -190,15 +191,6 @@ function syncLayer(layer: Layer): void {
   for (const c of cubes) if (c.layerId === layer.id) syncCube(c);
   applyLayerOrders();
   updateCenterMarker();
-}
-
-function normRotation(r: Rotation): Rotation {
-  const n = (v: number) => {
-    let x = Math.round(v / 90) * 90;
-    x = (((x + 180) % 360) + 360) % 360 - 180;
-    return x;
-  };
-  return { x: n(r.x), y: n(r.y), z: n(r.z) };
 }
 
 // ---------- 场景增删辅助 ----------
@@ -453,19 +445,33 @@ const layerActions: LayerPanelActions = {
   rotateLayer: (id, axis, delta) => {
     const l = layerById(id);
     if (!l) return;
-    const before = { ...l.rotation };
-    l.rotation = normRotation({ ...l.rotation, [axis]: l.rotation[axis] + delta });
+    const before = { rotation: { ...l.rotation }, pos: { ...l.pos } };
+    // 用四元数 world-frame 复合累加旋转，消除欧拉分量累加的万向锁/顺序不一致
+    const newRot = rotateByAxis(l.rotation, axis, delta);
+    const c = getRotationCenter(id); // 旋转中心（图层本地坐标）
+    const cBefore = rotateGridPos(c, l.rotation);
+    const cAfter = rotateGridPos(c, newRot);
+    // 补偿 pos，使旋转中心的世界位置在旋转前后保持不变（即绕该中心公转）
+    const newPos = {
+      x: l.pos.x + cBefore.x - cAfter.x,
+      y: l.pos.y + cBefore.y - cAfter.y,
+      z: l.pos.z + cBefore.z - cAfter.z,
+    };
+    l.rotation = newRot;
+    l.pos = newPos;
     syncLayer(l);
     layerPanel.refresh();
     viewer.clearPreview();
     history.push({
       undo: () => {
-        l.rotation = before;
+        l.rotation = before.rotation;
+        l.pos = before.pos;
         syncLayer(l);
         layerPanel.refresh();
       },
       redo: () => {
-        l.rotation = normRotation({ ...before, [axis]: before[axis] + delta });
+        l.rotation = newRot;
+        l.pos = newPos;
         syncLayer(l);
         layerPanel.refresh();
       },
@@ -633,7 +639,7 @@ const layerActions: LayerPanelActions = {
   previewRotate: (axis, delta) => {
     const layer = getActiveLayer();
     if (!layer) return;
-    const previewRot = normRotation({ ...layer.rotation, [axis]: layer.rotation[axis] + delta });
+    const previewRot = rotateByAxis(layer.rotation, axis, delta);
     const items = cubes
       .filter((c) => c.layerId === layer.id)
       .map((c) => {
@@ -940,7 +946,7 @@ hint.innerHTML =
   '左键拖拽旋转视角 · 滚轮缩放 · 单击立方体选中（蓝色高亮）<br/>' +
   '选中后：旋转/贴面堆叠/编辑选中面/展开选中/删除<br/>' +
   '右侧图层面板：整层平移旋转、显隐、不透明度、单色<br/>' +
-  '悬停平移/旋转/贴面堆叠按钮可预览（橙色线框）；图层面板可设旋转中心<br/>' +
+  '悬停平移/旋转/贴面堆叠按钮可预览（橙色线框）；图层面板可设旋转中心（图层旋转以此为中心枢轴）<br/>' +
   '仅可选中当前活动图层的立方体（图层隔离）<br/>' +
   'Ctrl+Z 撤销 · Ctrl+Y 或 Ctrl+Shift+Z 重做 · 保存/读取/拍照 · Esc 解除视角锁定';
 document.body.appendChild(hint);

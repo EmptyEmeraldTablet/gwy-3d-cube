@@ -449,6 +449,18 @@ button.btn:disabled {
   padding: 0;
 }
 
+/* 旋转中心操作按钮：一行内等宽自适应，避免长文本被裁切 */
+.lp-rc-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 24px;
+  font-size: 11px;
+  padding: 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .lp-val {
   min-width: 34px;
   text-align: center;
