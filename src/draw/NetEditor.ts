@@ -1,0 +1,159 @@
+import { Cube, FACE_ORDER, FACE_SIZE, FaceId } from '../model/types';
+import { NET_TEMPLATES, NetTemplate } from '../model/net';
+import { Painter } from './Painter';
+import { markFaceDirty } from '../scene/CubeFactory';
+
+interface OpenOptions {
+  onMerge: (cube: Cube) => void;
+  onCancel: () => void;
+}
+
+/**
+ * 平面展开编辑器：将选中立方体的 6 个面按所选模板平铺到一张大画布上，
+ * 支持与单面相同的绘制操作；点击「合并」把每张格子内容还原回对应面。
+ */
+export class NetEditor {
+  private overlay: HTMLDivElement | null = null;
+  private painter: Painter | null = null;
+  private template: NetTemplate = NET_TEMPLATES[0];
+
+  open(cube: Cube, opts: OpenOptions): void {
+    this.template = NET_TEMPLATES[0];
+
+    const overlay = document.createElement('div');
+    overlay.className = 'face-editor-overlay';
+    overlay.innerHTML = `
+      <div class="net-editor">
+        <h3>平面展开：<code>${cube.id}</code></h3>
+        <div class="template-row">
+          <span class="group-label">展开图</span>
+          <select data-role="template"></select>
+        </div>
+        <div class="tools">
+          <button class="btn active" data-tool="line">线段</button>
+          <button class="btn" data-tool="rect">矩形</button>
+          <button class="btn" data-tool="circle">圆</button>
+          <button class="btn" data-tool="text">文字</button>
+          <button class="btn" data-tool="image">导入图片</button>
+          <input type="text" class="text-input" data-role="text" value="文字" placeholder="文字内容" />
+          <input type="file" accept="image/*" data-role="file" />
+        </div>
+        <div class="canvas-wrap"></div>
+        <div class="actions">
+          <button class="btn" data-action="cancel">取消</button>
+          <button class="btn active" data-action="merge">合并为立方体</button>
+        </div>
+      </div>`;
+
+    const select = overlay.querySelector<HTMLSelectElement>('[data-role="template"]')!;
+    for (const t of NET_TEMPLATES) {
+      const o = document.createElement('option');
+      o.value = t.id;
+      o.textContent = t.name;
+      select.appendChild(o);
+    }
+
+    const netCanvas = document.createElement('canvas');
+    overlay.querySelector('.canvas-wrap')!.appendChild(netCanvas);
+
+    const painter = new Painter(netCanvas);
+    this.renderNet(cube, this.template, netCanvas);
+    painter.begin();
+    this.painter = painter;
+
+    select.addEventListener('change', () => {
+      const tpl = NET_TEMPLATES.find((t) => t.id === select.value)!;
+      this.template = tpl;
+      painter.end();
+      this.renderNet(cube, tpl, netCanvas);
+      painter.begin();
+    });
+
+    overlay.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => {
+      b.addEventListener('click', () => {
+        painter.setTool(b.dataset.tool as 'line' | 'rect' | 'circle' | 'text' | 'image');
+        overlay
+          .querySelectorAll('[data-tool]')
+          .forEach((x) => x.classList.remove('active'));
+        b.classList.add('active');
+      });
+    });
+
+    const textInput = overlay.querySelector<HTMLInputElement>('[data-role="text"]')!;
+    textInput.addEventListener('input', () => painter.setText(textInput.value));
+    const fileInput = overlay.querySelector<HTMLInputElement>('[data-role="file"]')!;
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files?.[0]) painter.importImage(fileInput.files[0]);
+    });
+
+    overlay.querySelector<HTMLButtonElement>('[data-action="merge"]')!.addEventListener(
+      'click',
+      () => {
+        this.mergeNet(cube, this.template, netCanvas);
+        FACE_ORDER.forEach((f) => markFaceDirty(cube, f));
+        opts.onMerge(cube);
+        this.close();
+      }
+    );
+    overlay.querySelector<HTMLButtonElement>('[data-action="cancel"]')!.addEventListener(
+      'click',
+      () => {
+        painter.restore();
+        opts.onCancel();
+        this.close();
+      }
+    );
+
+    document.body.appendChild(overlay);
+    this.overlay = overlay;
+  }
+
+  /** 将立方体各面按模板渲染到展开画布。 */
+  private renderNet(cube: Cube, tpl: NetTemplate, canvas: HTMLCanvasElement): void {
+    const S = FACE_SIZE;
+    canvas.width = tpl.cols * S;
+    canvas.height = tpl.rows * S;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    for (const cell of tpl.cells) {
+      ctx.save();
+      ctx.translate(cell.col * S + S / 2, cell.row * S + S / 2);
+      // 画布 y 轴向下，故用 -rot 抵消数学坐标系（y 向上）的朝向
+      ctx.rotate((-cell.rot * Math.PI) / 180);
+      ctx.translate(-S / 2, -S / 2);
+      ctx.drawImage(cube.faces[cell.face].canvas, 0, 0);
+      ctx.restore();
+    }
+  }
+
+  /** 把展开画布中每个格子还原回对应面（按 -rot 逆向旋转）。 */
+  private mergeNet(cube: Cube, tpl: NetTemplate, canvas: HTMLCanvasElement): void {
+    const S = FACE_SIZE;
+    for (const cell of tpl.cells) {
+      const face = cube.faces[cell.face as FaceId];
+      const out = document.createElement('canvas');
+      out.width = S;
+      out.height = S;
+      const octx = out.getContext('2d')!;
+      octx.clearRect(0, 0, S, S);
+      octx.save();
+      octx.translate(S / 2, S / 2);
+      // 与展开渲染相反：用 +rot 将格子内容还原回对应面
+      octx.rotate((cell.rot * Math.PI) / 180);
+      octx.translate(-S / 2, -S / 2);
+      octx.drawImage(canvas, cell.col * S, cell.row * S, S, S, 0, 0, S, S);
+      octx.restore();
+      const fctx = face.canvas.getContext('2d')!;
+      fctx.clearRect(0, 0, S, S);
+      fctx.drawImage(out, 0, 0);
+    }
+  }
+
+  private close(): void {
+    this.painter?.end();
+    this.overlay?.remove();
+    this.overlay = null;
+    this.painter = null;
+  }
+}

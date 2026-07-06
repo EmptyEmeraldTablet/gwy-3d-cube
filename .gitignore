@@ -1,0 +1,26 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+
+# 调试 / 临时诊断文件
+diag*.mjs
+diag*_out.txt
+esbuild_out.txt
+esbuild_tmp.txt
+net_debug.mjs
+net_test.mjs
+tmp_*.mjs
+tmp_*.ts
+
+# 日志
+*.log
+
+# 系统 / 编辑器文件
+.DS_Store
+Thumbs.db
+
+# 本地环境变量
+.env
+.env.local
