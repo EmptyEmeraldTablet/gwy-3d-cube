@@ -16,9 +16,14 @@ export class NetEditor {
   private overlay: HTMLDivElement | null = null;
   private painter: Painter | null = null;
   private template: NetTemplate = NET_TEMPLATES[0];
+  // 视图变换（仅影响展开图的显示朝向，不改变像素缓冲与合并回拼逻辑）
+  private viewRot = 0; // 0 / 90 / 180 / 270
+  private viewMirror = false;
 
   open(cube: Cube, opts: OpenOptions): void {
     this.template = NET_TEMPLATES[0];
+    this.viewRot = 0;
+    this.viewMirror = false;
 
     const overlay = document.createElement('div');
     overlay.className = 'face-editor-overlay';
@@ -28,6 +33,10 @@ export class NetEditor {
         <div class="template-row">
           <span class="group-label">展开图</span>
           <select data-role="template"></select>
+          <span class="group-label">视图</span>
+          <button class="btn" data-view="rotate">旋转 90°</button>
+          <button class="btn" data-view="mirror">水平镜像</button>
+          <button class="btn" data-view="reset">复位</button>
         </div>
         <div class="tools">
           <button class="btn active" data-tool="line">线段</button>
@@ -67,7 +76,30 @@ export class NetEditor {
       painter.end();
       this.renderNet(cube, tpl, netCanvas);
       painter.begin();
+      this.applyView(netCanvas);
     });
+
+    // 视图变换：旋转 / 镜像 / 复位（纯显示层，不影响合并回拼）
+    overlay
+      .querySelector<HTMLButtonElement>('[data-view="rotate"]')!
+      .addEventListener('click', () => {
+        this.viewRot = (this.viewRot + 90) % 360;
+        this.applyView(netCanvas);
+      });
+    overlay
+      .querySelector<HTMLButtonElement>('[data-view="mirror"]')!
+      .addEventListener('click', () => {
+        this.viewMirror = !this.viewMirror;
+        this.applyView(netCanvas);
+      });
+    overlay
+      .querySelector<HTMLButtonElement>('[data-view="reset"]')!
+      .addEventListener('click', () => {
+        this.viewRot = 0;
+        this.viewMirror = false;
+        this.applyView(netCanvas);
+      });
+    this.applyView(netCanvas);
 
     overlay.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => {
       b.addEventListener('click', () => {
@@ -106,6 +138,19 @@ export class NetEditor {
 
     document.body.appendChild(overlay);
     this.overlay = overlay;
+  }
+
+  /**
+   * 应用当前视图变换到画布的 CSS transform（仅改变显示朝向）。
+   * 画布像素缓冲与 renderNet/mergeNet 的坐标完全不受影响，故绝不影响实际拼合；
+   * Painter 会通过逆矩阵把指针坐标映射回画布像素，保证变换后仍能准确绘制。
+   */
+  private applyView(canvas: HTMLCanvasElement): void {
+    const parts: string[] = [];
+    if (this.viewMirror) parts.push('scaleX(-1)');
+    if (this.viewRot) parts.push(`rotate(${this.viewRot}deg)`);
+    canvas.style.transform = parts.join(' ');
+    canvas.style.transformOrigin = 'center';
   }
 
   /** 将立方体各面按模板渲染到展开画布。 */

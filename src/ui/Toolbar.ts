@@ -22,6 +22,23 @@ export interface ToolbarActions {
  * 撤销/重做按钮由 setHistory 控制。
  */
 export class Toolbar {
+  /** 常用颜色列表（点击直接应用为选中立方体的统一底色）。 */
+  private static readonly PRESET_COLORS: readonly string[] = [
+    '#e53935', // 红
+    '#fb8c00', // 橙
+    '#fdd835', // 黄
+    '#43a047', // 绿
+    '#00acc1', // 青
+    '#1e88e5', // 蓝
+    '#3949ab', // 靛
+    '#8e24aa', // 紫
+    '#d81b60', // 品红
+    '#6d4c41', // 棕
+    '#9e9e9e', // 灰
+    '#212121', // 黑
+    '#ffffff', // 白
+  ];
+
   private readonly root: HTMLDivElement;
   private readonly dependentButtons: HTMLButtonElement[] = [];
   private readonly historyButtons: HTMLButtonElement[] = [];
@@ -60,12 +77,27 @@ export class Toolbar {
     op.append(attach, edit, remove);
     this.root.appendChild(op);
 
-    // 单色（统一底色）控件：颜色选择 + 清除
+    // 单色（统一底色）控件：常用色板 + 自定义颜色 + 清除
+    const swatches = document.createElement('div');
+    swatches.className = 'tb-swatches';
+    for (const hex of Toolbar.PRESET_COLORS) {
+      const s = document.createElement('button');
+      s.className = 'tb-swatch';
+      s.style.background = hex;
+      s.title = hex;
+      s.addEventListener('click', () => {
+        actions.setColor(hex);
+        this.colorInput.value = hex;
+      });
+      this.dependentButtons.push(s);
+      swatches.appendChild(s);
+    }
+
     const colorInput = document.createElement('input');
     colorInput.type = 'color';
     colorInput.className = 'tb-color';
     colorInput.value = '#4a7dff';
-    colorInput.title = '单色（统一底色，保留逐面绘制）';
+    colorInput.title = '自定义颜色（统一底色，保留逐面绘制）';
     colorInput.addEventListener('input', () => actions.setColor(colorInput.value));
     this.colorInput = colorInput;
     const clearColor = this.button('清除色', () => {
@@ -77,7 +109,7 @@ export class Toolbar {
     const cl = document.createElement('span');
     cl.className = 'group-label';
     cl.textContent = '色彩';
-    colorGroup.append(cl, colorInput, clearColor);
+    colorGroup.append(cl, swatches, colorInput, clearColor);
     this.root.appendChild(colorGroup);
 
     this.root.appendChild(

@@ -53,10 +53,28 @@ export class Painter {
   }
 
   private pos(e: PointerEvent): { x: number; y: number } {
-    const rect = this.canvas.getBoundingClientRect();
+    const c = this.canvas;
+    const rect = c.getBoundingClientRect();
+    const transform = getComputedStyle(c).transform;
+    // 画布若被施加了 CSS 变换（如展开图的旋转/镜像预览），需用逆矩阵把
+    // 屏幕坐标映射回画布像素坐标，保证在变换后的视图下仍能准确绘制。
+    // 变换 origin 为默认的 center，故变换后包围盒中心即为不动点（= transform-origin）。
+    if (transform && transform !== 'none') {
+      const m = new DOMMatrix(transform).inverse();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const p = new DOMPoint(e.clientX - cx, e.clientY - cy).matrixTransform(m);
+      // offsetWidth/Height 为未受 transform 影响的布局尺寸（CSS 像素）
+      const cssW = c.offsetWidth || rect.width;
+      const cssH = c.offsetHeight || rect.height;
+      return {
+        x: ((p.x + cssW / 2) / cssW) * c.width,
+        y: ((p.y + cssH / 2) / cssH) * c.height,
+      };
+    }
     return {
-      x: ((e.clientX - rect.left) / rect.width) * this.canvas.width,
-      y: ((e.clientY - rect.top) / rect.height) * this.canvas.height,
+      x: ((e.clientX - rect.left) / rect.width) * c.width,
+      y: ((e.clientY - rect.top) / rect.height) * c.height,
     };
   }
 

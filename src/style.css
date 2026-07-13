@@ -236,6 +236,7 @@ button.btn:disabled {
   cursor: crosshair;
   touch-action: none;
   border-radius: 4px;
+  transition: transform 0.18s ease;
 }
 
 .net-editor .actions {
@@ -517,6 +518,32 @@ button.btn:disabled {
   cursor: pointer;
 }
 .tb-color:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 工具栏常用色板 */
+.tb-swatches {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  max-width: 210px;
+  align-items: center;
+}
+.tb-swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.15s;
+}
+.tb-swatch:hover:not(:disabled) {
+  transform: scale(1.18);
+  box-shadow: 0 0 0 2px rgba(95, 176, 255, 0.5);
+}
+.tb-swatch:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
