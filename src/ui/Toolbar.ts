@@ -6,6 +6,8 @@ export interface ToolbarActions {
   removeSelected: () => void;
   openNet: () => void;
   setColor: (color: string | null) => void;
+  /** 设定当前绘制色（填充/橡皮/描边共用），由取色控件驱动。 */
+  setDrawColor: (color: string) => void;
   undo: () => void;
   redo: () => void;
   save: () => void;
@@ -87,6 +89,7 @@ export class Toolbar {
       s.title = hex;
       s.addEventListener('click', () => {
         actions.setColor(hex);
+        actions.setDrawColor(hex);
         this.colorInput.value = hex;
       });
       this.dependentButtons.push(s);
@@ -98,7 +101,10 @@ export class Toolbar {
     colorInput.className = 'tb-color';
     colorInput.value = '#4a7dff';
     colorInput.title = '自定义颜色（统一底色，保留逐面绘制）';
-    colorInput.addEventListener('input', () => actions.setColor(colorInput.value));
+    colorInput.addEventListener('input', () => {
+      actions.setColor(colorInput.value);
+      actions.setDrawColor(colorInput.value);
+    });
     this.colorInput = colorInput;
     const clearColor = this.button('清除色', () => {
       actions.setColor(null);

@@ -1,6 +1,6 @@
 import { Cube, FACE_ORDER, FACE_SIZE, FaceId } from '../model/types';
 import { NET_TEMPLATES, NetTemplate } from '../model/net';
-import { Painter } from './Painter';
+import { Painter, DrawTool } from './Painter';
 import { markFaceDirty } from '../scene/CubeFactory';
 
 interface OpenOptions {
@@ -39,13 +39,23 @@ export class NetEditor {
           <button class="btn" data-view="reset">复位</button>
         </div>
         <div class="tools">
+          <span class="group-label">绘制</span>
           <button class="btn active" data-tool="line">线段</button>
           <button class="btn" data-tool="rect">矩形</button>
           <button class="btn" data-tool="circle">圆</button>
           <button class="btn" data-tool="text">文字</button>
-          <button class="btn" data-tool="image">导入图片</button>
+          <button class="btn" data-tool="eraser">橡皮擦</button>
           <input type="text" class="text-input" data-role="text" value="文字" placeholder="文字内容" />
+          <button class="btn" data-tool="image">导入图片</button>
           <input type="file" accept="image/*" data-role="file" />
+          <span class="group-label">选区</span>
+          <button class="btn" data-tool="select-rect">矩形选区</button>
+          <button class="btn" data-tool="select-ellipse">椭圆选区</button>
+          <button class="btn" data-tool="select-free">套索</button>
+          <button class="btn" data-tool="fill">填充</button>
+          <button class="btn" data-action="clear-sel">取消选区</button>
+          <span class="group-label">粗细</span>
+          <input type="range" min="1" max="40" value="6" class="width-slider" data-role="width" />
         </div>
         <div class="canvas-wrap"></div>
         <div class="actions">
@@ -103,13 +113,20 @@ export class NetEditor {
 
     overlay.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => {
       b.addEventListener('click', () => {
-        painter.setTool(b.dataset.tool as 'line' | 'rect' | 'circle' | 'text' | 'image');
+        painter.setTool(b.dataset.tool as DrawTool);
         overlay
           .querySelectorAll('[data-tool]')
           .forEach((x) => x.classList.remove('active'));
         b.classList.add('active');
       });
     });
+
+    overlay
+      .querySelector<HTMLButtonElement>('[data-action="clear-sel"]')!
+      .addEventListener('click', () => painter.clearSelection());
+
+    const widthInput = overlay.querySelector<HTMLInputElement>('[data-role="width"]')!;
+    widthInput.addEventListener('input', () => painter.setLineWidth(Number(widthInput.value)));
 
     const textInput = overlay.querySelector<HTMLInputElement>('[data-role="text"]')!;
     textInput.addEventListener('input', () => painter.setText(textInput.value));
@@ -137,6 +154,7 @@ export class NetEditor {
     );
 
     document.body.appendChild(overlay);
+    this.painter?.relayout(); // 模态框入 DOM 后重排覆盖层，修正首帧 0 尺寸
     this.overlay = overlay;
   }
 
@@ -144,13 +162,13 @@ export class NetEditor {
    * 应用当前视图变换到画布的 CSS transform（仅改变显示朝向）。
    * 画布像素缓冲与 renderNet/mergeNet 的坐标完全不受影响，故绝不影响实际拼合；
    * Painter 会通过逆矩阵把指针坐标映射回画布像素，保证变换后仍能准确绘制。
+   * 覆盖层（蚂蚁线）同步同一变换，确保旋转/镜像下选区与绘制坐标对齐。
    */
-  private applyView(canvas: HTMLCanvasElement): void {
+  private applyView(_canvas: HTMLCanvasElement): void {
     const parts: string[] = [];
     if (this.viewMirror) parts.push('scaleX(-1)');
     if (this.viewRot) parts.push(`rotate(${this.viewRot}deg)`);
-    canvas.style.transform = parts.join(' ');
-    canvas.style.transformOrigin = 'center';
+    this.painter?.setViewTransform(parts.join(' '));
   }
 
   /** 将立方体各面按模板渲染到展开画布。 */

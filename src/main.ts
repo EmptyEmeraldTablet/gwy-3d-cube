@@ -24,6 +24,7 @@ import {
 } from './scene/layerMath';
 import { FaceEditor } from './draw/FaceEditor';
 import { NetEditor } from './draw/NetEditor';
+import { setDrawColor } from './draw/Painter';
 import { Toolbar } from './ui/Toolbar';
 import { LayerPanel, LayerPanelActions, LayerPanelState } from './ui/LayerPanel';
 import { History, copyCanvas, restoreCanvas } from './core/History';
@@ -811,6 +812,9 @@ toolbar = new Toolbar({
       },
       onCancel: () => {},
     });
+  },
+  setDrawColor: (color) => {
+    setDrawColor(color);
   },
   setColor: (color) => {
     if (!selected) return;

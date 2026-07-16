@@ -143,6 +143,7 @@ button.btn:disabled {
 }
 
 .face-editor .canvas-wrap {
+  position: relative;
   display: flex;
   justify-content: center;
   background: #15181e;
@@ -150,7 +151,7 @@ button.btn:disabled {
   padding: 8px;
 }
 
-.face-editor canvas {
+.face-editor canvas:not(.painter-overlay) {
   width: 360px;
   height: 360px;
   background: #ffffff;
@@ -221,6 +222,7 @@ button.btn:disabled {
 }
 
 .net-editor .canvas-wrap {
+  position: relative;
   display: flex;
   justify-content: center;
   background: #15181e;
@@ -229,7 +231,7 @@ button.btn:disabled {
   overflow: auto;
 }
 
-.net-editor canvas {
+.net-editor canvas:not(.painter-overlay) {
   background: #fff;
   max-width: 76vw;
   max-height: 56vh;
@@ -237,6 +239,22 @@ button.btn:disabled {
   touch-action: none;
   border-radius: 4px;
   transition: transform 0.18s ease;
+}
+
+/* 选区蚂蚁线覆盖层：叠在 data canvas 上，仅显示不拦截事件、不写像素 */
+.painter-overlay {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+  background: transparent;
+  transition: transform 0.18s ease;
+}
+
+/* 粗细滑块（绘制 / 橡皮共用） */
+.width-slider {
+  width: 110px;
+  accent-color: #4a7dff;
+  cursor: pointer;
 }
 
 .net-editor .actions {

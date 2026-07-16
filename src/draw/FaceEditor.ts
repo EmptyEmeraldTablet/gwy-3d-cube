@@ -1,5 +1,5 @@
 import { Face } from '../model/types';
-import { Painter } from './Painter';
+import { Painter, DrawTool } from './Painter';
 
 interface OpenOptions {
   onCommit: (face: Face) => void;
@@ -22,14 +22,24 @@ export class FaceEditor {
       <div class="face-editor">
         <h3>编辑面：<code>${face.id}</code></h3>
         <div class="tools">
+          <span class="group-label">绘制</span>
           <button class="btn active" data-tool="line">线段</button>
           <button class="btn" data-tool="rect">矩形</button>
           <button class="btn" data-tool="circle">圆</button>
           <button class="btn" data-tool="text">文字</button>
-          <button class="btn" data-tool="image">导入图片</button>
+          <button class="btn" data-tool="eraser">橡皮擦</button>
           <button class="btn" data-action="rotate">旋转 90°</button>
           <input type="text" class="text-input" data-role="text" value="文字" placeholder="文字内容" />
+          <button class="btn" data-tool="image">导入图片</button>
           <input type="file" accept="image/*" data-role="file" />
+          <span class="group-label">选区</span>
+          <button class="btn" data-tool="select-rect">矩形选区</button>
+          <button class="btn" data-tool="select-ellipse">椭圆选区</button>
+          <button class="btn" data-tool="select-free">套索</button>
+          <button class="btn" data-tool="fill">填充</button>
+          <button class="btn" data-action="clear-sel">取消选区</button>
+          <span class="group-label">粗细</span>
+          <input type="range" min="1" max="40" value="6" class="width-slider" data-role="width" />
         </div>
         <div class="canvas-wrap"></div>
         <div class="actions">
@@ -46,13 +56,20 @@ export class FaceEditor {
 
     overlay.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => {
       b.addEventListener('click', () => {
-        painter.setTool(b.dataset.tool as 'line' | 'rect' | 'circle' | 'text' | 'image');
+        painter.setTool(b.dataset.tool as DrawTool);
         overlay
           .querySelectorAll('[data-tool]')
           .forEach((x) => x.classList.remove('active'));
         b.classList.add('active');
       });
     });
+
+    overlay
+      .querySelector<HTMLButtonElement>('[data-action="clear-sel"]')!
+      .addEventListener('click', () => painter.clearSelection());
+
+    const widthInput = overlay.querySelector<HTMLInputElement>('[data-role="width"]')!;
+    widthInput.addEventListener('input', () => painter.setLineWidth(Number(widthInput.value)));
 
     const textInput = overlay.querySelector<HTMLInputElement>('[data-role="text"]')!;
     textInput.addEventListener('input', () => painter.setText(textInput.value));
@@ -83,6 +100,7 @@ export class FaceEditor {
     );
 
     document.body.appendChild(overlay);
+    painter.relayout(); // 模态框入 DOM 后重排覆盖层，修正首帧 0 尺寸
     this.overlay = overlay;
     this.painter = painter;
   }
