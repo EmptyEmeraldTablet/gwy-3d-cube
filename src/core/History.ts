@@ -3,6 +3,9 @@ export interface Command {
   redo(): void;
   /** 可选：当该命令因历史栈裁剪/清空而被丢弃时调用，用于释放其持有的重资源（如 GPU 资源、canvas 副本）。 */
   dispose?(): void;
+  /** Estimated retained pixel/resource memory, in bytes. */
+  bytes?: number;
+  resources?: { key: object; release: () => void }[];
 }
 
 /** 同步复制一个 canvas 的像素内容。 */
@@ -23,6 +26,7 @@ export function restoreCanvas(dst: HTMLCanvasElement, src: HTMLCanvasElement): v
 
 /** 历史栈上限：超过后丢弃最旧命令并释放其资源，防止内存无限增长。 */
 const MAX_HISTORY = 100;
+const MAX_BYTES = 64 * 1024 * 1024;
 
 /**
  * 撤销/重做管理器（命令模式）。
@@ -33,15 +37,17 @@ export class History {
   private undoStack: Command[] = [];
   private redoStack: Command[] = [];
   private readonly onChange?: () => void;
+  private readonly references = new Map<object, number>();
 
   constructor(onChange?: () => void) {
     this.onChange = onChange;
   }
 
   push(cmd: Command): void {
+    for (const resource of cmd.resources ?? []) this.references.set(resource.key, (this.references.get(resource.key) ?? 0) + 1);
     this.undoStack.push(cmd);
     // 新操作清空 redo 栈，其持有的资源不再可用，需释放
-    for (const c of this.redoStack) c.dispose?.();
+    for (const c of this.redoStack) this.release(c);
     this.redoStack = [];
     this.trim();
     this.onChange?.();
@@ -49,9 +55,11 @@ export class History {
 
   /** 裁剪 undoStack 超出上限的旧命令并释放资源。 */
   private trim(): void {
-    while (this.undoStack.length > MAX_HISTORY) {
+    let bytes = this.undoStack.reduce((sum, c) => sum + (c.bytes ?? 1024), 0);
+    while (this.undoStack.length > 1 && (this.undoStack.length > MAX_HISTORY || bytes > MAX_BYTES)) {
       const old = this.undoStack.shift()!;
-      old.dispose?.();
+      bytes -= old.bytes ?? 1024;
+      this.release(old);
     }
   }
 
@@ -80,10 +88,19 @@ export class History {
   }
 
   clear(): void {
-    for (const c of this.undoStack) c.dispose?.();
-    for (const c of this.redoStack) c.dispose?.();
+    for (const c of this.undoStack) this.release(c);
+    for (const c of this.redoStack) this.release(c);
     this.undoStack = [];
     this.redoStack = [];
     this.onChange?.();
+  }
+
+  private release(command: Command): void {
+    command.dispose?.();
+    for (const resource of command.resources ?? []) {
+      const count = (this.references.get(resource.key) ?? 1) - 1;
+      if (count) this.references.set(resource.key, count);
+      else { this.references.delete(resource.key); resource.release(); }
+    }
   }
 }

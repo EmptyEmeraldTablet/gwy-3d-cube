@@ -24,3 +24,5 @@ Thumbs.db
 # 本地环境变量
 .env
 .env.local
+test-results/
+playwright-report/

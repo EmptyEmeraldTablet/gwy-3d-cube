@@ -100,3 +100,23 @@ export function layerPointToWorld(local: GridPos, layer: Layer): GridPos {
     z: rotated.z + layer.pos.z,
   };
 }
+
+export function rotateLayerAround(layer: Layer, center: GridPos, axis: keyof Rotation, delta: number): { rotation: Rotation; pos: GridPos } {
+  const rotation = rotateByAxis(layer.rotation, axis, delta);
+  const before = rotateGridPos(center, layer.rotation), after = rotateGridPos(center, rotation);
+  return { rotation, pos: { x: layer.pos.x + before.x - after.x, y: layer.pos.y + before.y - after.y, z: layer.pos.z + before.z - after.z } };
+}
+
+export function dominantAxis(direction: THREE.Vector3): THREE.Vector3 {
+  const axis = (['x', 'y', 'z'] as const).reduce((a, b) => Math.abs(direction[a]) >= Math.abs(direction[b]) ? a : b);
+  const result = new THREE.Vector3(); result[axis] = direction[axis] < 0 ? -1 : 1; return result;
+}
+
+/** World intent is snapped once, then conjugated into the layer's local frame. */
+export function rotateInLayer(rotation: Rotation, layerRotation: Rotation, direction: THREE.Vector3, degrees: number): Rotation {
+  const axis = dominantAxis(direction), layerQ = quatOf(layerRotation);
+  const delta = new THREE.Quaternion().setFromAxisAngle(axis, DEG(degrees));
+  const q = layerQ.clone().invert().multiply(delta).multiply(layerQ).multiply(quatOf(rotation));
+  const e = new THREE.Euler().setFromQuaternion(q);
+  return { x: normDeg(e.x), y: normDeg(e.y), z: normDeg(e.z) };
+}

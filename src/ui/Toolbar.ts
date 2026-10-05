@@ -6,8 +6,6 @@ export interface ToolbarActions {
   removeSelected: () => void;
   openNet: () => void;
   setColor: (color: string | null) => void;
-  /** 设定当前绘制色（填充/橡皮/描边共用），由取色控件驱动。 */
-  setDrawColor: (color: string) => void;
   undo: () => void;
   redo: () => void;
   save: () => void;
@@ -63,7 +61,7 @@ export class Toolbar {
           { label: '⤴ 上翻', onClick: () => actions.rotate('up') },
           { label: '⤵ 下翻', onClick: () => actions.rotate('down') },
         ],
-        '旋转(依视角)'
+        '单体转向（主轴）', true
       )
     );
 
@@ -89,7 +87,6 @@ export class Toolbar {
       s.title = hex;
       s.addEventListener('click', () => {
         actions.setColor(hex);
-        actions.setDrawColor(hex);
         this.colorInput.value = hex;
       });
       this.dependentButtons.push(s);
@@ -101,9 +98,8 @@ export class Toolbar {
     colorInput.className = 'tb-color';
     colorInput.value = '#4a7dff';
     colorInput.title = '自定义颜色（统一底色，保留逐面绘制）';
-    colorInput.addEventListener('input', () => {
+    colorInput.addEventListener('change', () => {
       actions.setColor(colorInput.value);
-      actions.setDrawColor(colorInput.value);
     });
     this.colorInput = colorInput;
     const clearColor = this.button('清除色', () => {
@@ -114,12 +110,12 @@ export class Toolbar {
     colorGroup.className = 'group';
     const cl = document.createElement('span');
     cl.className = 'group-label';
-    cl.textContent = '色彩';
+    cl.textContent = '面底色';
     colorGroup.append(cl, swatches, colorInput, clearColor);
     this.root.appendChild(colorGroup);
 
     this.root.appendChild(
-      this.group([{ label: '展开选中', onClick: actions.openNet }], '展开')
+      this.group([{ label: '展开选中', onClick: actions.openNet }], '展开', true)
     );
 
     const undoBtn = this.button('↶ 撤销', actions.undo);
@@ -132,7 +128,7 @@ export class Toolbar {
 
     const saveBtn = this.button('保存', actions.save);
     const loadBtn = this.button('读取', () => this.loadInput.click());
-    const shotBtn = this.button('拍照', actions.screenshot);
+    const shotBtn = this.button('导出当前视图', actions.screenshot);
     const fileGroup = document.createElement('div');
     fileGroup.className = 'group';
     fileGroup.append(saveBtn, loadBtn, shotBtn);
@@ -156,7 +152,8 @@ export class Toolbar {
 
   private group(
     btns: { label: string; onClick: () => void }[],
-    label?: string
+    label?: string,
+    dependent = false
   ): HTMLDivElement {
     const g = document.createElement('div');
     g.className = 'group';
@@ -166,7 +163,10 @@ export class Toolbar {
       l.textContent = label;
       g.appendChild(l);
     }
-    for (const b of btns) g.appendChild(this.button(b.label, b.onClick));
+    for (const b of btns) {
+      const button = this.button(b.label, b.onClick); g.appendChild(button);
+      if (dependent) this.dependentButtons.push(button);
+    }
     return g;
   }
 

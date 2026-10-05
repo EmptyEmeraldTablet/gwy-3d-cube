@@ -1,467 +1,234 @@
-export type DrawTool =
-  | 'line'
-  | 'rect'
-  | 'circle'
-  | 'text'
-  | 'image'
-  | 'select-rect'
-  | 'select-ellipse'
-  | 'select-free'
-  | 'fill'
-  | 'eraser';
+import { copyCanvas, restoreCanvas } from '../core/History';
 
-export type Selection =
-  | { kind: 'rect'; x: number; y: number; w: number; h: number }
-  | { kind: 'ellipse'; x: number; y: number; w: number; h: number }
-  | { kind: 'free'; points: { x: number; y: number }[] };
-
-/** 当前绘制色（填充 / 橡皮 / 描边共用），由工具栏取色控件驱动。 */
+export type DrawTool = 'inspect' | 'line' | 'rect' | 'circle' | 'text' | 'image' | 'select-rect' | 'select-ellipse' | 'select-free' | 'fill' | 'eraser';
+export type Selection = { kind: 'rect'; x: number; y: number; w: number; h: number } | { kind: 'ellipse'; x: number; y: number; w: number; h: number } | { kind: 'free'; points: Point[] };
+interface Point { x: number; y: number; }
+export interface PainterOptions {
+  changed?: () => void;
+  pick?: (point: Point) => void;
+  hover?: (point: Point | null) => void;
+  validPoint?: (point: Point) => boolean;
+  mask?: (ctx: CanvasRenderingContext2D) => void;
+  decorate?: (ctx: CanvasRenderingContext2D) => void;
+  error?: (message: string) => void;
+}
 let drawColor = '#1f6feb';
-/** 当前线宽（描边 / 橡皮共用）。 */
 let lineWidth = 6;
+export function setDrawColor(value: string): void { drawColor = value; }
+export function getDrawColor(): string { return drawColor; }
+export function setLineWidthGlobal(value: number): void { lineWidth = Math.max(1, Math.min(40, Math.round(value))); }
+export function getLineWidth(): number { return lineWidth; }
 
-export function setDrawColor(hex: string): void {
-  drawColor = hex;
-}
-export function getDrawColor(): string {
-  return drawColor;
-}
-export function setLineWidthGlobal(w: number): void {
-  lineWidth = Math.max(1, Math.min(40, Math.round(w)));
-}
-export function getLineWidth(): number {
-  return lineWidth;
-}
-
-/**
- * 通用画布绘制核心：在任意尺寸的 canvas 上提供
- * 线段 / 矩形 / 圆 / 文字 / 导入图片 / 旋转内容 / 选区 / 油漆桶填充 / 橡皮 能力，
- * 并维护「已提交基线」(base) 以便取消还原与预览。
- * FaceEditor 与 NetEditor 共用此逻辑。
- *
- * 选区轮廓与拖拽预览均绘制在独立的覆盖层 canvas 上（pointer-events:none），
- * 绝不写入 data canvas 像素，从而保证展开图 mergeNet / 面合并逻辑零影响。
- */
 export class Painter {
-  readonly canvas: HTMLCanvasElement;
-  private base: HTMLCanvasElement | null = null;
   tool: DrawTool = 'line';
-  private textValue = '文字';
-  private drawing = false;
-  private dragging = false; // 是否正在框选
-  private start = { x: 0, y: 0 };
-  private last = { x: 0, y: 0 };
-  private selection: Selection | null = null;
-  private dragSel: Selection | null = null; // 拖拽中的临时选区
-
-  // 覆盖层（蚂蚁线）
+  private base: HTMLCanvasElement | null = null;
+  private original: HTMLCanvasElement | null = null;
+  private stroke: HTMLCanvasElement | null = null;
   private overlay: HTMLCanvasElement | null = null;
-  private animFrame = 0;
+  private selection: Selection | null = null;
+  private dragSelection: Selection | null = null;
+  private pointer: number | null = null;
+  private start: Point = { x: 0, y: 0 };
+  private last: Point = { x: 0, y: 0 };
+  private text = '文字';
+  private frame = 0;
+  private generation = 0;
+  private resize: ResizeObserver | null = null;
+  private readonly down = (e: PointerEvent) => this.onDown(e);
+  private readonly move = (e: PointerEvent) => this.onMove(e);
+  private readonly up = (e: PointerEvent) => this.onUp(e);
+  private readonly cancel = () => this.cancelStroke();
+  private readonly leave = () => this.options.hover?.(null);
 
-  private readonly onDown = (e: PointerEvent) => this.handleDown(e);
-  private readonly onMove = (e: PointerEvent) => this.handleMove(e);
-  private readonly onUp = (e: PointerEvent) => this.handleUp(e);
-  private readonly onResize = () => this.layoutOverlay();
+  constructor(readonly canvas: HTMLCanvasElement, private readonly options: PainterOptions = {}) {}
 
-  constructor(canvas: HTMLCanvasElement) {
-    this.canvas = canvas;
-  }
-
-  /** 开始编辑：快照当前画布作为已提交基线，建立覆盖层并绑定指针事件。 */
   begin(): void {
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    this.base = document.createElement('canvas');
-    this.base.width = w;
-    this.base.height = h;
-    this.base.getContext('2d')!.drawImage(this.canvas, 0, 0);
-
-    // 覆盖层：与 data canvas 同分辨率，叠在其上用于画蚂蚁线，不拦截事件
-    const ov = document.createElement('canvas');
-    ov.className = 'painter-overlay';
-    ov.width = w;
-    ov.height = h;
-    ov.style.pointerEvents = 'none';
-    this.canvas.parentElement?.appendChild(ov);
-    this.overlay = ov;
-    this.layoutOverlay();
-
-    this.canvas.addEventListener('pointerdown', this.onDown);
-    this.canvas.addEventListener('pointermove', this.onMove);
-    window.addEventListener('pointerup', this.onUp);
-    window.addEventListener('resize', this.onResize);
-    this.startAnts();
+    this.end();
+    this.original = copyCanvas(this.canvas);
+    this.base = copyCanvas(this.canvas);
+    this.overlay = document.createElement('canvas');
+    this.overlay.className = 'painter-overlay';
+    this.canvas.parentElement?.append(this.overlay);
+    this.canvas.addEventListener('pointerdown', this.down);
+    this.canvas.addEventListener('pointermove', this.move);
+    this.canvas.addEventListener('pointerup', this.up);
+    this.canvas.addEventListener('pointercancel', this.cancel);
+    this.canvas.addEventListener('lostpointercapture', this.cancel);
+    this.canvas.addEventListener('pointerleave', this.leave);
+    window.addEventListener('blur', this.cancel);
+    this.resize = new ResizeObserver(() => this.relayout());
+    this.resize.observe(this.canvas);
+    this.relayout();
   }
 
-  /** 结束编辑：解绑事件、停止蚂蚁线动画并移除覆盖层。 */
   end(): void {
-    this.canvas.removeEventListener('pointerdown', this.onDown);
-    this.canvas.removeEventListener('pointermove', this.onMove);
-    window.removeEventListener('pointerup', this.onUp);
-    window.removeEventListener('resize', this.onResize);
-    this.stopAnts();
-    this.overlay?.remove();
-    this.overlay = null;
-    this.base = null;
-    this.selection = null;
-    this.dragSel = null;
+    this.cancelStroke();
+    this.generation++;
+    cancelAnimationFrame(this.frame); this.frame = 0;
+    this.resize?.disconnect(); this.resize = null;
+    this.canvas.removeEventListener('pointerdown', this.down);
+    this.canvas.removeEventListener('pointermove', this.move);
+    this.canvas.removeEventListener('pointerup', this.up);
+    this.canvas.removeEventListener('pointercancel', this.cancel);
+    this.canvas.removeEventListener('lostpointercapture', this.cancel);
+    this.canvas.removeEventListener('pointerleave', this.leave);
+    window.removeEventListener('blur', this.cancel);
+    this.overlay?.remove(); this.overlay = null;
+    this.base = this.original = this.stroke = null;
+    this.selection = this.dragSelection = null;
   }
 
-  setTool(t: DrawTool): void {
-    this.tool = t;
+  reload(): void {
+    this.cancelStroke();
+    this.generation++;
+    this.base = copyCanvas(this.canvas);
+    this.clearSelection();
+    this.relayout();
   }
-
-  setText(v: string): void {
-    this.textValue = v || '文字';
-  }
-
-  setDrawColor(hex: string): void {
-    drawColor = hex;
-  }
-
-  setLineWidth(w: number): void {
-    lineWidth = Math.max(1, Math.min(40, Math.round(w)));
-  }
-
-  /** 清除当前选区（旋转/导入图片等会改动像素，需先清选区避免错位）。 */
-  clearSelection(): void {
-    this.selection = null;
-    this.dragSel = null;
-    this.dragging = false;
-  }
-
-  /** 设置视图变换：data canvas 与覆盖层同步，保证旋转/镜像下对齐。 */
+  setTool(tool: DrawTool): void { this.cancelStroke(); this.tool = tool; this.canvas.style.cursor = tool === 'inspect' ? 'pointer' : 'crosshair'; }
+  setText(text: string): void { this.text = text || '文字'; }
+  setDrawColor(value: string): void { setDrawColor(value); }
+  setLineWidth(value: number): void { setLineWidthGlobal(value); }
+  clearSelection(): void { this.selection = this.dragSelection = null; this.requestOverlay(); }
   setViewTransform(css: string): void {
     this.canvas.style.transform = css;
-    this.canvas.style.transformOrigin = 'center';
-    if (this.overlay) {
-      this.overlay.style.transform = css;
-      this.overlay.style.transformOrigin = 'center';
-    }
-    this.layoutOverlay();
+    if (this.overlay) this.overlay.style.transform = css;
+    this.relayout();
   }
-
-  /** 在模态框挂载到 DOM 后调用，依据当前布局重排覆盖层（首帧 begin 时父级可能尚未入 DOM）。 */
   relayout(): void {
-    this.layoutOverlay();
-  }
-
-  /** 将覆盖层定位/缩放到与 data canvas 的布局盒一致（不受 CSS 变换影响）。 */
-  private layoutOverlay(): void {
     if (!this.overlay) return;
-    this.overlay.style.left = `${this.canvas.offsetLeft}px`;
-    this.overlay.style.top = `${this.canvas.offsetTop}px`;
-    this.overlay.style.width = `${this.canvas.offsetWidth}px`;
-    this.overlay.style.height = `${this.canvas.offsetHeight}px`;
+    const c = this.canvas, o = this.overlay;
+    if (o.width !== c.width) o.width = c.width;
+    if (o.height !== c.height) o.height = c.height;
+    Object.assign(o.style, { left: `${c.offsetLeft}px`, top: `${c.offsetTop}px`, width: `${c.offsetWidth}px`, height: `${c.offsetHeight}px`, transform: c.style.transform, transformOrigin: 'center' });
+    this.requestOverlay();
   }
 
-  private pos(e: PointerEvent): { x: number; y: number } {
-    const c = this.canvas;
-    const rect = c.getBoundingClientRect();
-    const transform = getComputedStyle(c).transform;
-    // 画布若被施加了 CSS 变换（如展开图的旋转/镜像预览），需用逆矩阵把
-    // 屏幕坐标映射回画布像素坐标，保证在变换后的视图下仍能准确绘制。
-    if (transform && transform !== 'none') {
-      const m = new DOMMatrix(transform).inverse();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const p = new DOMPoint(e.clientX - cx, e.clientY - cy).matrixTransform(m);
-      const cssW = c.offsetWidth || rect.width;
-      const cssH = c.offsetHeight || rect.height;
-      return {
-        x: ((p.x + cssW / 2) / cssW) * c.width,
-        y: ((p.y + cssH / 2) / cssH) * c.height,
-      };
+  point(e: PointerEvent): Point {
+    const c = this.canvas, rect = c.getBoundingClientRect(), transform = getComputedStyle(c).transform;
+    const inverse = new DOMMatrix(transform === 'none' ? undefined : transform).inverse();
+    const point = new DOMPoint(e.clientX - rect.left - rect.width / 2, e.clientY - rect.top - rect.height / 2).matrixTransform(inverse);
+    return { x: (point.x / c.offsetWidth + .5) * c.width, y: (point.y / c.offsetHeight + .5) * c.height };
+  }
+
+  private onDown(e: PointerEvent): void {
+    if (e.button !== 0 || this.pointer !== null || !this.base) return;
+    const p = this.point(e);
+    if (this.options.validPoint && !this.options.validPoint(p)) return;
+    e.preventDefault(); this.canvas.focus(); this.options.pick?.(p);
+    if (this.tool === 'inspect' || this.tool === 'image') return;
+    if (this.tool === 'fill') { this.fill(); return; }
+    if (this.tool === 'text') {
+      this.paint(this.base.getContext('2d')!, ctx => { ctx.fillStyle = drawColor; ctx.font = 'bold 40px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(this.text, p.x, p.y); });
+      this.commit(); return;
     }
-    return {
-      x: ((e.clientX - rect.left) / rect.width) * c.width,
-      y: ((e.clientY - rect.top) / rect.height) * c.height,
-    };
+    this.pointer = e.pointerId; this.start = this.last = p; this.stroke = copyCanvas(this.canvas);
+    this.canvas.setPointerCapture(e.pointerId);
+    if (this.tool === 'select-free') this.dragSelection = { kind: 'free', points: [p] };
+    else if (this.tool.startsWith('select-')) this.dragSelection = { kind: this.tool === 'select-rect' ? 'rect' : 'ellipse', x: p.x, y: p.y, w: 0, h: 0 };
+    else if (this.tool === 'eraser') this.erase(p, p);
+    this.requestOverlay();
   }
 
-  // ---------------- 指针交互 ----------------
-
-  private handleDown(e: PointerEvent): void {
-    const p = this.pos(e);
-    switch (this.tool) {
-      case 'select-rect':
-      case 'select-ellipse':
-        this.dragging = true;
-        this.start = p;
-        this.dragSel = { kind: this.tool === 'select-rect' ? 'rect' : 'ellipse', x: p.x, y: p.y, w: 0, h: 0 };
-        break;
-      case 'select-free':
-        this.dragging = true;
-        this.dragSel = { kind: 'free', points: [p] };
-        break;
-      case 'fill':
-        this.fill();
-        break;
-      case 'text':
-        this.commitText(p);
-        break;
-      case 'image':
-        break; // 由文件输入触发
-      case 'eraser':
-        this.drawing = true;
-        this.last = p;
-        this.eraseSegment(p, p);
-        break;
-      default: // line / rect / circle
-        this.drawing = true;
-        this.start = p;
-        this.last = { ...p };
-        break;
-    }
+  private onMove(e: PointerEvent): void {
+    const p = this.point(e); this.options.hover?.(p);
+    if (this.pointer !== e.pointerId) return;
+    if (this.dragSelection) {
+      const s = this.dragSelection;
+      if (s.kind === 'free') { if (Math.hypot(p.x - this.last.x, p.y - this.last.y) >= 2) s.points.push(p); }
+      else Object.assign(s, { x: Math.min(p.x, this.start.x), y: Math.min(p.y, this.start.y), w: Math.abs(p.x - this.start.x), h: Math.abs(p.y - this.start.y) });
+      this.requestOverlay();
+    } else if (this.tool === 'eraser') this.erase(this.last, p);
+    else { restoreCanvas(this.canvas, this.base!); this.shape(this.canvas.getContext('2d')!, this.start, p); }
+    this.last = p;
   }
 
-  private handleMove(e: PointerEvent): void {
-    const p = this.pos(e);
-    if (this.dragging && this.dragSel) {
-      if (this.dragSel.kind === 'free') {
-        const pts = this.dragSel.points;
-        const lastP = pts[pts.length - 1];
-        if (Math.hypot(p.x - lastP.x, p.y - lastP.y) >= 3) pts.push(p);
-      } else {
-        this.dragSel.x = Math.min(this.start.x, p.x);
-        this.dragSel.y = Math.min(this.start.y, p.y);
-        this.dragSel.w = Math.abs(p.x - this.start.x);
-        this.dragSel.h = Math.abs(p.y - this.start.y);
-      }
-      return; // 预览由蚂蚁线 rAF 渲染在覆盖层
-    }
-    if (this.drawing) {
-      if (this.tool === 'eraser') {
-        this.eraseSegment(this.last, p);
-        this.last = p;
-      } else {
-        this.last = p;
-        this.preview();
-      }
-    }
-  }
-
-  private handleUp(_e: PointerEvent): void {
-    if (this.dragging && this.dragSel) {
-      const s = this.dragSel;
-      const valid =
-        s.kind === 'free' ? s.points.length >= 2 : s.w >= 2 || s.h >= 2;
-      this.selection = valid ? s : null;
-      this.dragSel = null;
-      this.dragging = false;
-      return;
-    }
-    if (this.drawing) {
-      this.drawing = false;
-      const bctx = this.base!.getContext('2d')!;
-      this.drawShape(bctx, this.start, this.last);
-      this.syncFromBase();
-    }
-  }
-
-  // ---------------- 形状 / 文字 / 擦除 ----------------
-
-  /** face.canvas 上绘制：基线 base + 当前预览笔画。 */
-  private preview(): void {
-    const ctx = this.canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    ctx.drawImage(this.base!, 0, 0);
-    this.drawShape(ctx, this.start, this.last);
-  }
-
-  private drawShape(
-    ctx: CanvasRenderingContext2D,
-    a: { x: number; y: number },
-    b: { x: number; y: number }
-  ): void {
-    if (this.tool === 'line') {
-      this.styleStroke(ctx);
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-    } else if (this.tool === 'rect') {
-      this.styleStroke(ctx);
-      ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
-    } else if (this.tool === 'circle') {
-      this.styleStroke(ctx);
-      const rx = Math.abs(b.x - a.x) / 2;
-      const ry = Math.abs(b.y - a.y) / 2;
-      ctx.beginPath();
-      ctx.ellipse((a.x + b.x) / 2, (a.y + b.y) / 2, rx, ry, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-  }
-
-  private styleStroke(ctx: CanvasRenderingContext2D): void {
-    ctx.strokeStyle = drawColor;
-    ctx.lineWidth = lineWidth;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-  }
-
-  private eraseSegment(a: { x: number; y: number }, b: { x: number; y: number }): void {
-    const targets: CanvasRenderingContext2D[] = [this.canvas.getContext('2d')!];
-    if (this.base) targets.push(this.base.getContext('2d')!);
-    for (const ctx of targets) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.strokeStyle = 'rgba(0,0,0,1)';
-      ctx.lineWidth = lineWidth;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
-
-  private commitText(p: { x: number; y: number }): void {
-    const bctx = this.base!.getContext('2d')!;
-    this.drawText(bctx, p);
-    const fctx = this.canvas.getContext('2d')!;
-    fctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    fctx.drawImage(this.base!, 0, 0);
-  }
-
-  private drawText(ctx: CanvasRenderingContext2D, p: { x: number; y: number }): void {
-    ctx.fillStyle = drawColor;
-    ctx.font = 'bold 40px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(this.textValue, p.x, p.y);
-  }
-
-  // ---------------- 选区 / 填充 ----------------
-
-  private buildPath(ctx: CanvasRenderingContext2D, sel: Selection): void {
-    if (sel.kind === 'rect') {
-      ctx.rect(sel.x, sel.y, sel.w, sel.h);
-    } else if (sel.kind === 'ellipse') {
-      ctx.ellipse(sel.x + sel.w / 2, sel.y + sel.h / 2, sel.w / 2, sel.h / 2, 0, 0, Math.PI * 2);
+  private onUp(e: PointerEvent): void {
+    if (this.pointer !== e.pointerId) return;
+    this.onMove(e);
+    this.pointer = null;
+    if (this.canvas.hasPointerCapture(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId);
+    if (this.dragSelection) {
+      const s = this.dragSelection;
+      this.selection = s.kind === 'free' ? (s.points.length >= 3 ? s : null) : (s.w >= 2 && s.h >= 2 ? s : null);
+      this.dragSelection = null; this.requestOverlay();
     } else {
-      const pts = sel.points;
-      if (pts.length < 2) return;
-      ctx.moveTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.closePath();
+      if (this.tool !== 'eraser') this.shape(this.base!.getContext('2d')!, this.start, this.last);
+      this.commit();
     }
+    this.stroke = null;
   }
 
-  /** 油漆桶填充：有选区则仅填充选区内，否则填充整张画布。 */
+  cancelStroke(): void {
+    if (this.pointer === null) return;
+    const id = this.pointer; this.pointer = null;
+    if (this.stroke && this.base) { restoreCanvas(this.canvas, this.stroke); restoreCanvas(this.base, this.stroke); }
+    if (this.canvas.hasPointerCapture(id)) this.canvas.releasePointerCapture(id);
+    this.stroke = null; this.dragSelection = null; this.requestOverlay();
+  }
+
+  private selectionPath(ctx: CanvasRenderingContext2D, s: Selection): void {
+    if (s.kind === 'rect') ctx.rect(s.x, s.y, s.w, s.h);
+    else if (s.kind === 'ellipse') ctx.ellipse(s.x + s.w / 2, s.y + s.h / 2, s.w / 2, s.h / 2, 0, 0, Math.PI * 2);
+    else { s.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); }
+  }
+  private paint(ctx: CanvasRenderingContext2D, draw: (ctx: CanvasRenderingContext2D) => void): void {
+    ctx.save();
+    if (this.options.mask) { ctx.beginPath(); this.options.mask(ctx); ctx.clip(); }
+    if (this.selection) { ctx.beginPath(); this.selectionPath(ctx, this.selection); ctx.clip(); }
+    draw(ctx); ctx.restore();
+  }
+  private shape(ctx: CanvasRenderingContext2D, a: Point, b: Point): void {
+    this.paint(ctx, ctx => {
+      ctx.strokeStyle = drawColor; ctx.lineWidth = lineWidth; ctx.lineCap = ctx.lineJoin = 'round'; ctx.beginPath();
+      if (this.tool === 'line') { ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); }
+      else if (this.tool === 'rect') ctx.rect(a.x, a.y, b.x - a.x, b.y - a.y);
+      else if (this.tool === 'circle') ctx.ellipse((a.x + b.x) / 2, (a.y + b.y) / 2, Math.abs(b.x - a.x) / 2, Math.abs(b.y - a.y) / 2, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+  }
+  private erase(a: Point, b: Point): void {
+    this.paint(this.base!.getContext('2d')!, ctx => { ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = lineWidth; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); });
+    restoreCanvas(this.canvas, this.base!);
+  }
+  private commit(): void { if (this.base) restoreCanvas(this.canvas, this.base); this.options.changed?.(); }
   fill(): void {
     if (!this.base) return;
-    const ctx = this.canvas.getContext('2d')!;
-    ctx.save();
-    ctx.fillStyle = drawColor;
-    if (this.selection) {
-      ctx.beginPath();
-      this.buildPath(ctx, this.selection);
-      ctx.clip();
-    }
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    ctx.restore();
-    // 提交进基线
-    const bctx = this.base.getContext('2d')!;
-    bctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    bctx.drawImage(this.canvas, 0, 0);
-    this.syncFromBase();
+    this.paint(this.base.getContext('2d')!, ctx => { ctx.fillStyle = drawColor; ctx.fillRect(0, 0, this.canvas.width, this.canvas.height); });
+    this.commit();
   }
-
-  private syncFromBase(): void {
+  rotateContent(degrees: number): void {
     if (!this.base) return;
-    const fctx = this.canvas.getContext('2d')!;
-    fctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    fctx.drawImage(this.base, 0, 0);
+    const source = copyCanvas(this.base), ctx = this.base.getContext('2d')!;
+    ctx.clearRect(0, 0, source.width, source.height); ctx.save(); ctx.translate(source.width / 2, source.height / 2); ctx.rotate(degrees * Math.PI / 180); ctx.drawImage(source, -source.width / 2, -source.height / 2); ctx.restore();
+    this.clearSelection(); this.commit();
   }
-
-  // ---------------- 覆盖层蚂蚁线 ----------------
-
-  private activeSelection(): Selection | null {
-    return this.dragSel ?? this.selection;
+  async importImage(file: File): Promise<void> {
+    const token = this.generation;
+    if (!this.base || !file) return;
+    try {
+      const image = await createImageBitmap(file);
+      if (token !== this.generation || !this.base) { image.close(); return; }
+      const scale = Math.min(this.canvas.width / image.width, this.canvas.height / image.height);
+      this.paint(this.base.getContext('2d')!, ctx => ctx.drawImage(image, (this.canvas.width - image.width * scale) / 2, (this.canvas.height - image.height * scale) / 2, image.width * scale, image.height * scale));
+      image.close(); this.commit();
+    } catch { if (token === this.generation) this.options.error?.('图片无法读取，请选择有效的图片文件。'); }
   }
+  restore(): void { if (this.original) { restoreCanvas(this.canvas, this.original); this.reload(); } }
 
-  private startAnts(): void {
-    const loop = () => {
-      this.renderOverlay();
-      this.animFrame = requestAnimationFrame(loop);
-    };
-    this.animFrame = requestAnimationFrame(loop);
-  }
-
-  private stopAnts(): void {
-    if (this.animFrame) cancelAnimationFrame(this.animFrame);
-    this.animFrame = 0;
-  }
-
-  private renderOverlay(): void {
-    const o = this.overlay;
-    if (!o) return;
-    const octx = o.getContext('2d')!;
-    octx.clearRect(0, 0, o.width, o.height);
-    const sel = this.activeSelection();
-    if (!sel) return;
-    octx.save();
-    octx.beginPath();
-    this.buildPath(octx, sel);
-    octx.setLineDash([6, 4]);
-    octx.lineWidth = 2;
-    const off = -(performance.now() / 50) % 10;
-    octx.lineDashOffset = off;
-    octx.strokeStyle = '#000';
-    octx.stroke();
-    octx.lineDashOffset = off + 3;
-    octx.strokeStyle = '#fff';
-    octx.stroke();
-    octx.restore();
-  }
-
-  /** 导入图片：铺满当前画布，并同步写回 base。 */
-  importImage(file: File): void {
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const fctx = this.canvas.getContext('2d')!;
-      fctx.drawImage(img, 0, 0, this.canvas.width, this.canvas.height);
-      this.base!.getContext('2d')!.drawImage(img, 0, 0, this.canvas.width, this.canvas.height);
-      this.clearSelection();
-      URL.revokeObjectURL(url);
-    };
-    img.src = url;
-  }
-
-  /** 将当前画布内容整体旋转 deg 度，并同步 base。 */
-  rotateContent(deg: number): void {
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    const tmp = document.createElement('canvas');
-    tmp.width = w;
-    tmp.height = h;
-    const tctx = tmp.getContext('2d')!;
-    tctx.translate(w / 2, h / 2);
-    tctx.rotate((deg * Math.PI) / 180);
-    tctx.translate(-w / 2, -h / 2);
-    tctx.drawImage(this.canvas, 0, 0);
-
-    const bctx = this.base!.getContext('2d')!;
-    bctx.clearRect(0, 0, w, h);
-    bctx.drawImage(tmp, 0, 0);
-
-    const fctx = this.canvas.getContext('2d')!;
-    fctx.clearRect(0, 0, w, h);
-    fctx.drawImage(tmp, 0, 0);
-    this.clearSelection();
-  }
-
-  /** 取消：把画布还原为基线，并清除选区。 */
-  restore(): void {
-    if (!this.base) return;
-    this.clearSelection();
-    const ctx = this.canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    ctx.drawImage(this.base, 0, 0);
+  requestOverlay(): void {
+    if (!this.overlay || this.frame) return;
+    this.frame = requestAnimationFrame(() => {
+      this.frame = 0;
+      if (!this.overlay) return;
+      const ctx = this.overlay.getContext('2d')!; ctx.clearRect(0, 0, this.overlay.width, this.overlay.height);
+      this.options.decorate?.(ctx);
+      const s = this.dragSelection ?? this.selection;
+      if (s) {
+        ctx.save(); ctx.beginPath(); this.selectionPath(ctx, s); ctx.setLineDash([6, 4]); ctx.lineWidth = 2;
+        ctx.lineDashOffset = -(performance.now() / 50) % 10; ctx.strokeStyle = '#111'; ctx.stroke(); ctx.lineDashOffset += 5; ctx.strokeStyle = '#fff'; ctx.stroke(); ctx.restore();
+        this.requestOverlay();
+      }
+    });
   }
 }

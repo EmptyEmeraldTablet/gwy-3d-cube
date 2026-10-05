@@ -1,10 +1,14 @@
 import * as THREE from 'three';
+import type { NetPreferences } from './netVariants';
 
 /** 立方体六个面的标识，按 BoxGeometry 材质组的固定顺序。 */
 export type FaceId = 'px' | 'nx' | 'py' | 'ny' | 'pz' | 'nz';
 
 /** 与 THREE.BoxGeometry 的 material groups 顺序一致：+X,-X,+Y,-Y,+Z,-Z。 */
 export const FACE_ORDER: FaceId[] = ['px', 'nx', 'py', 'ny', 'pz', 'nz'];
+
+export const FACE_LABELS: Record<FaceId, string> = { pz: 'A', px: 'B', nz: 'C', nx: 'D', py: 'E', ny: 'F' };
+export const FACE_NAMES: Record<FaceId, string> = { pz: '前', px: '右', nz: '后', nx: '左', py: '上', ny: '下' };
 
 /** 每个面对应的局部法线（未旋转前）。 */
 export const LOCAL_NORMALS: Record<FaceId, THREE.Vector3> = {
@@ -45,6 +49,7 @@ export interface Cube {
   mesh: THREE.Mesh;
   layerId: string; // 所属图层
   color?: string; // 统一底色（hex）；undefined 表示使用默认逐面灰底
+  net?: NetPreferences;
 }
 
 /**
@@ -72,17 +77,13 @@ export interface SceneModel {
 export const DEFAULT_LAYER_ID = 'layer-default';
 
 let layerCounter = 0;
+const usedLayerIds = new Set<string>();
 export function nextLayerId(): string {
-  layerCounter += 1;
+  do { layerCounter += 1; } while (usedLayerIds.has(`layer-${layerCounter}`));
   const id = `layer-${layerCounter}`;
-  // console.log(`[DBG] nextLayerId() -> ${id} (counter=${layerCounter})`);
+  usedLayerIds.add(id);
   return id;
 }
-
-// /** 读取当前图层ID计数器（供调试诊断用）。 */
-// export function getLayerCounter(): number {
-//   return layerCounter;
-// }
 
 /**
  * 加载场景后同步计数器，避免后续 nextLayerId() 生成与已加载图层冲突的ID。
@@ -91,11 +92,11 @@ export function nextLayerId(): string {
 export function syncLayerIdCounter(ids: string[]): void {
   let max = layerCounter;
   for (const id of ids) {
+    usedLayerIds.add(id);
     const m = /^layer-(\d+)$/.exec(id);
-    if (m) max = Math.max(max, Number(m[1]));
+    if (m && Number(m[1]) < 1e9) max = Math.max(max, Number(m[1]));
   }
   layerCounter = max;
-  // console.log(`[DBG] syncLayerIdCounter -> ${layerCounter}`);
 }
 
 /** 创建默认图层（场景初始唯一图层）。 */
@@ -113,7 +114,16 @@ export function createDefaultLayer(): Layer {
 export const FACE_SIZE = 256;
 
 let cubeCounter = 0;
+const usedCubeIds = new Set<string>();
 export function nextCubeId(): string {
-  cubeCounter += 1;
-  return `cube-${cubeCounter}`;
+  do { cubeCounter += 1; } while (usedCubeIds.has(`cube-${cubeCounter}`));
+  const id = `cube-${cubeCounter}`; usedCubeIds.add(id); return id;
+}
+
+export function syncCubeIdCounter(ids: string[]): void {
+  for (const id of ids) {
+    usedCubeIds.add(id);
+    const match = /^cube-(\d+)$/.exec(id);
+    if (match && Number(match[1]) < 1e9) cubeCounter = Math.max(cubeCounter, Number(match[1]));
+  }
 }

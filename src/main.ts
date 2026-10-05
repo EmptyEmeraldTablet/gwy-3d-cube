@@ -7,8 +7,6 @@ import {
   setCubeColor,
   applyLayerStyle,
   markFaceDirty,
-  setCubeHighlight,
-  rotateWorldAxis,
   disposeCube,
 } from './scene/CubeFactory';
 import { Picker } from './scene/Picker';
@@ -19,16 +17,20 @@ import {
   composeRotation,
   invertRotation,
   rotateGridPos,
-  rotateByAxis,
   layerPointToWorld,
+  rotateLayerAround,
+  rotateInLayer,
+  dominantAxis,
 } from './scene/layerMath';
-import { FaceEditor } from './draw/FaceEditor';
-import { NetEditor } from './draw/NetEditor';
-import { setDrawColor } from './draw/Painter';
+import { faceBackground } from './draw/faceAppearance';
 import { Toolbar } from './ui/Toolbar';
 import { LayerPanel, LayerPanelActions, LayerPanelState } from './ui/LayerPanel';
 import { History, copyCanvas, restoreCanvas } from './core/History';
-import { downloadScene, readSceneFile } from './model/serialize';
+import { downloadScene, readSceneFile, serializeScene, validateScene, SceneExtras } from './model/serialize';
+import { readAutosave, writeAutosave } from './model/autosave';
+import { createViewBar } from './ui/ViewBar';
+import { cloneNetPreferences } from './model/netVariants';
+import { Modal } from './ui/Modal';
 import {
   Cube,
   FaceId,
@@ -40,13 +42,44 @@ import {
   createDefaultLayer,
   nextLayerId,
   syncLayerIdCounter,
+  syncCubeIdCounter,
+  FACE_LABELS,
 } from './model/types';
 
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
 const viewer = new Viewer(canvas);
-const faceEditor = new FaceEditor();
-const netEditor = new NetEditor();
+let openingEditor = false;
 const SIZE = viewer.getGridSize();
+const status = document.createElement('div'); status.className = 'scene-status'; status.setAttribute('role', 'status'); document.body.append(status);
+function notify(message: string): void { status.textContent = message; }
+const saveStatus = document.createElement('span'); saveStatus.className = 'save-status'; saveStatus.setAttribute('role', 'status'); document.body.append(saveStatus);
+let saveTimer = 0, saving = false, saveAgain = false;
+function sceneExtras(): SceneExtras { return { view: viewer.saveView(), rotationCenters: Object.fromEntries([...rotationCenterByLayer].filter(([id]) => layerById(id)).map(([id, point]) => [id, { ...point }])) }; }
+function scheduleAutosave(): void {
+  clearTimeout(saveTimer); saveStatus.textContent = '等待自动保存…';
+  saveTimer = window.setTimeout(() => { void autosave(); }, 900);
+}
+async function autosave(): Promise<void> {
+  if (saving) { saveAgain = true; return; } saving = true;
+  try { await writeAutosave(serializeScene(cubes, layers, activeLayerId, SIZE, sceneExtras())); saveStatus.textContent = '已自动保存到本机'; }
+  catch { saveStatus.textContent = '自动保存失败，请使用“保存”下载作品'; }
+  finally { saving = false; if (saveAgain) { saveAgain = false; scheduleAutosave(); } }
+}
+async function recoverAutosave(): Promise<void> {
+  try {
+    const saved = await readAutosave(); if (!saved) { notify('本机还没有自动保存的作品。'); return; }
+    const modal = new Modal('face-editor', '恢复本机作品', () => modal.close());
+    const message = document.createElement('p'); message.textContent = `本机作品保存于 ${new Date(saved.savedAt).toLocaleString()}，包含 ${saved.scene.cubes.length} 个单体。恢复会替换当前场景。`;
+    const recover = document.createElement('button'); recover.className = 'btn'; recover.textContent = '恢复这份作品'; recover.onclick = () => { modal.close(); void loadSceneFromFile(saved.scene); };
+    const cancel = document.createElement('button'); cancel.className = 'btn'; cancel.textContent = '取消'; cancel.onclick = () => modal.close(); modal.panel.append(message, recover, cancel); modal.mount();
+  } catch { notify('无法读取本机自动保存，请使用项目文件恢复。'); }
+}
+async function openTool(load: () => Promise<void>): Promise<void> {
+  if (openingEditor || document.querySelector('[role="dialog"]')) return;
+  openingEditor = true;
+  try { await load(); } catch { notify('工具加载失败，请刷新后重试。'); }
+  finally { openingEditor = false; }
+}
 
 const cubes: Cube[] = [];
 const picker = new Picker(viewer, cubes);
@@ -112,6 +145,8 @@ let toolbar: Toolbar;
 const history = new History(() => {
   toolbar.setHistory(history.canUndo(), history.canRedo());
   viewer.requestRender();
+  layerPanel.refresh();
+  scheduleAutosave();
 });
 
 // ---------- 图层辅助 ----------
@@ -122,55 +157,26 @@ function getActiveLayer(): Layer {
   return layerById(activeLayerId) ?? layers[0];
 }
 function layerVisible(id: string): boolean {
-  return layerById(id)?.visible !== false;
+  const layer = layerById(id);
+  return !!layer && layer.visible && layer.opacity > 0;
 }
 
-// ---------- DEBUG：图层状态快照（排查合并后多图层高亮问题）----------
-// function dbgLayers(label: string): void {
-//   const byId = new Map<string, string[]>();
-//   for (const l of layers) {
-//     const arr = byId.get(l.id) ?? [];
-//     arr.push(l.name);
-//     byId.set(l.id, arr);
-//   }
-//   const dups = [...byId.entries()].filter(([, names]) => names.length > 1);
-//   if (dups.length) {
-//     console.warn(`[DBG] ⚠️ 检测到重复图层ID @ ${label}:`, dups);
-//   }
-//   console.log(`[DBG] ── ${label} ── activeLayerId=${activeLayerId}`);
-//   console.table(
-//     layers.map((l, i) => ({
-//       idx: i,
-//       id: l.id,
-//       name: l.name,
-//       cubes: cubes.filter((c) => c.layerId === l.id).length,
-//       pos: `${l.pos.x},${l.pos.y},${l.pos.z}`,
-//       rot: `${l.rotation.x},${l.rotation.y},${l.rotation.z}`,
-//     }))
-//   );
-// }
 /** 严格隔离：仅当前活动图层中可见的立方体可被拾取。 */
 function pickableCubes(): Cube[] {
   return cubes.filter((c) => c.layerId === activeLayerId && layerVisible(c.layerId));
 }
 function refreshPicker(): void {
   picker.setCubes(pickableCubes());
+  if (selected && (!layerVisible(selected.layerId) || selected.layerId !== activeLayerId)) deselect();
 }
+function pickAt(x: number, y: number) { return picker.pick(viewer.toNDC(x, y), cubes.filter(c => layerVisible(c.layerId))); }
 /** 切换活动图层：刷新可拾取集合并取消不属于该层的残留选中（严格隔离）。 */
 function setActiveLayer(id: string): void {
-  // const matches = layers.filter((l) => l.id === id);
-  // if (matches.length !== 1) {
-  //   console.warn(
-  //     `[DBG] setActiveLayer(${id}) 匹配到 ${matches.length} 个图层（应为1）！`,
-  //     matches.map((l) => `${l.id}(${l.name})`)
-  //   );
-  // }
   activeLayerId = id;
   refreshPicker();
   if (selected && selected.layerId !== id) deselect();
   viewer.clearPreview();
   updateCenterMarker();
-  // dbgLayers(`setActiveLayer(${id})`);
 }
 /** 把立方体本地变换 + 所属图层变换合成为世界变换并写入 Mesh，并应用图层显隐/不透明度。 */
 function syncCube(cube: Cube): void {
@@ -178,9 +184,10 @@ function syncCube(cube: Cube): void {
   const world = layer ? worldTransform(cube, layer) : undefined;
   syncMeshTransform(cube, world);
   if (layer) applyLayerStyle(cube, layer.visible, layer.opacity);
+  if (selected === cube) viewer.setFaceSelection(cube, selectedFace ?? undefined);
   viewer.requestRender();
 }
-/** 按图层顺序设置 renderOrder（最前图层渲染在最上层）。 */
+/** 列表顺序用于重合表面的稳定排序，空间遮挡仍由深度决定。 */
 function applyLayerOrders(): void {
   layers.forEach((layer, idx) => {
     const order = layers.length - 1 - idx;
@@ -196,12 +203,14 @@ function syncLayer(layer: Layer): void {
 
 // ---------- 场景增删辅助 ----------
 function register(cube: Cube): void {
+  if (occupied(cube.gridPos, cube.layerId)) throw new Error('这个位置已有单体');
   cubes.push(cube);
   viewer.scene.add(cube.mesh);
   syncCube(cube);
   applyLayerOrders();
   refreshPicker();
   viewer.requestRender();
+  layerPanel.refresh();
 }
 function unregister(cube: Cube): void {
   viewer.scene.remove(cube.mesh);
@@ -226,12 +235,12 @@ canvas.addEventListener('pointerup', (e) => {
     if (moved > 5) return; // 拖拽保持模式，不取消
     pickingCenter = false;
     canvas.style.cursor = '';
-    const hit = picker.pick(viewer.toNDC(e.clientX, e.clientY));
+    const hit = pickAt(e.clientX, e.clientY);
     if (hit) commitRotationCenter(getActiveLayer(), { ...hit.cube.gridPos });
     return;
   }
   if (moved > 5) return; // 视为轨道拖拽，不拾取
-  const hit = picker.pick(viewer.toNDC(e.clientX, e.clientY));
+  const hit = pickAt(e.clientX, e.clientY);
   if (!hit) {
     deselect();
     return;
@@ -240,17 +249,17 @@ canvas.addEventListener('pointerup', (e) => {
 });
 
 function select(cube: Cube, face: FaceId): void {
-  if (selected && selected !== cube) setCubeHighlight(selected, false);
   selected = cube;
   selectedFace = face;
-  setCubeHighlight(cube, true);
+  viewer.setFaceSelection(cube, face);
   toolbar.setHasSelection(true);
   toolbar.setColorValue(cube.color);
+  notify(`选中 ${cube.id} · 面 ${FACE_LABELS[face]} · 仅编辑活动组件组`);
   viewer.requestRender();
 }
 
 function deselect(): void {
-  if (selected) setCubeHighlight(selected, false);
+  viewer.setFaceSelection(null);
   selected = null;
   selectedFace = null;
   toolbar.setHasSelection(false);
@@ -258,16 +267,23 @@ function deselect(): void {
 }
 
 function freeGridPos(): GridPos {
-  const occupied = new Set(cubes.map((c) => `${c.gridPos.x},${c.gridPos.y},${c.gridPos.z}`));
-  if (!occupied.has('0,0,0')) return { x: 0, y: 0, z: 0 };
+  const used = new Set(cubes.filter(c => c.layerId === activeLayerId).map((c) => `${c.gridPos.x},${c.gridPos.y},${c.gridPos.z}`));
+  if (!used.has('0,0,0')) return { x: 0, y: 0, z: 0 };
   for (let x = 1; ; x++) {
-    if (!occupied.has(`${x},0,0`)) return { x, y: 0, z: 0 };
+    if (!used.has(`${x},0,0`)) return { x, y: 0, z: 0 };
   }
 }
+
+function occupied(pos: GridPos, layerId: string): boolean {
+  return cubes.some(c => c.layerId === layerId && c.gridPos.x === pos.x && c.gridPos.y === pos.y && c.gridPos.z === pos.z);
+}
+const opacityStarts = new Map<string, number>();
+function holdCubes(items: Cube[]) { return items.map(cube => ({ key: cube, release: () => { if (!cube.mesh.parent) disposeCube(cube); } })); }
 
 // ---------- 图层管理动作 ----------
 const layerActions: LayerPanelActions = {
   addLayer: () => {
+    if (layers.length >= 100) { notify('最多支持 100 个组件组。'); return; }
     const layer: Layer = {
       id: nextLayerId(),
       name: `图层 ${layers.length + 1}`,
@@ -280,7 +296,6 @@ const layerActions: LayerPanelActions = {
     setActiveLayer(layer.id);
     applyLayerOrders();
     layerPanel.refresh();
-    // dbgLayers(`addLayer 新增 ${layer.id}(${layer.name})`);
     history.push({
       undo: () => {
         const i = layers.findIndex((l) => l.id === layer.id);
@@ -323,9 +338,7 @@ const layerActions: LayerPanelActions = {
     history.push({
       undo: doRestore,
       redo: doDelete,
-      dispose: () => {
-        for (const c of affected) if (!c.mesh.parent) disposeCube(c);
-      },
+      resources: holdCubes(affected), bytes: affected.length * 3 * 1024 * 1024,
     });
   },
   renameLayer: (id, name) => {
@@ -393,38 +406,37 @@ const layerActions: LayerPanelActions = {
   setOpacity: (id, opacity, commit) => {
     const l = layerById(id);
     if (!l) return;
-    const before = l.opacity;
+    if (!opacityStarts.has(id)) opacityStarts.set(id, l.opacity);
+    const before = opacityStarts.get(id)!;
     l.opacity = opacity;
     syncLayer(l);
-    layerPanel.refresh();
+    refreshPicker();
     if (commit) {
+      opacityStarts.delete(id);
+      if (before === opacity) return;
       history.push({
         undo: () => {
           l.opacity = before;
           syncLayer(l);
+          refreshPicker();
           layerPanel.refresh();
         },
         redo: () => {
           l.opacity = opacity;
           syncLayer(l);
+          refreshPicker();
           layerPanel.refresh();
         },
       });
     }
   },
   selectLayer: (id) => {
-    // console.log(`[DBG] selectLayer(${id}) 被点击`);
     setActiveLayer(id);
     layerPanel.refresh();
   },
   translateLayer: (id, axis, delta) => {
     const l = layerById(id);
     if (!l) return;
-    // const affected = cubes.filter((c) => c.layerId === l.id);
-    // console.log(
-    //   `[DBG] translateLayer id=${id} 找到图层=${l.id}(${l.name}) axis=${axis} delta=${delta} 影响 ${affected.length} 个立方体:`,
-    //   affected.map((c) => `${c.id}(layer=${c.layerId})`)
-    // );
     const before = { ...l.pos };
     l.pos = { ...l.pos, [axis]: l.pos[axis] + delta };
     syncLayer(l);
@@ -448,16 +460,7 @@ const layerActions: LayerPanelActions = {
     if (!l) return;
     const before = { rotation: { ...l.rotation }, pos: { ...l.pos } };
     // 用四元数 world-frame 复合累加旋转，消除欧拉分量累加的万向锁/顺序不一致
-    const newRot = rotateByAxis(l.rotation, axis, delta);
-    const c = getRotationCenter(id); // 旋转中心（图层本地坐标）
-    const cBefore = rotateGridPos(c, l.rotation);
-    const cAfter = rotateGridPos(c, newRot);
-    // 补偿 pos，使旋转中心的世界位置在旋转前后保持不变（即绕该中心公转）
-    const newPos = {
-      x: l.pos.x + cBefore.x - cAfter.x,
-      y: l.pos.y + cBefore.y - cAfter.y,
-      z: l.pos.z + cBefore.z - cAfter.z,
-    };
+    const { rotation: newRot, pos: newPos } = rotateLayerAround(l, getRotationCenter(id), axis, delta);
     l.rotation = newRot;
     l.pos = newPos;
     syncLayer(l);
@@ -514,25 +517,9 @@ const layerActions: LayerPanelActions = {
     const discarded = belowCubes.filter((c) =>
       activeKeys.has(`${c.gridPos.x},${c.gridPos.y},${c.gridPos.z}`)
     );
+    if (discarded.length && !window.confirm(`合并将覆盖下层 ${discarded.length} 个同位置单体及其六面图案，合并后使用下层的显示与透明度。此操作可以撤销。继续合并？`)) return;
 
     const doMerge = () => {
-      // console.log(
-      //   `[DBG] mergeDown.doMerge 开始: active=${active.id}(${active.name}) -> below=${below.id}(${below.name})`
-      // );
-      // console.log(`[DBG] transformed cubes (${transformed.length}):`);
-      // console.table(
-      //   transformed.map((t) => ({
-      //     cubeId: t.cube.id,
-      //     oldLayer: t.orig.layerId,
-      //     newLayer: below.id,
-      //     oldPos: `${t.orig.gridPos.x},${t.orig.gridPos.y},${t.orig.gridPos.z}`,
-      //     newPos: `${t.localPos.x},${t.localPos.y},${t.localPos.z}`,
-      //   }))
-      // );
-      // console.log(
-      //   `[DBG] discarded below-cubes (${discarded.length}):`,
-      //   discarded.map((d) => `${d.id}(layer=${d.layerId})`)
-      // );
       for (const t of transformed) {
         t.cube.layerId = below.id;
         t.cube.gridPos = { ...t.localPos };
@@ -541,20 +528,13 @@ const layerActions: LayerPanelActions = {
       }
       for (const d of discarded) unregister(d);
       const i = layers.findIndex((l) => l.id === active.id);
-      // console.log(
-      //   `[DBG] 移除活动图层 idx=${i} id=${active.id}(${active.name})`
-      // );
       if (i >= 0) layers.splice(i, 1);
       setActiveLayer(below.id);
       applyLayerOrders();
       layerPanel.refresh();
-      // dbgLayers('mergeDown.doMerge 完成');
     };
     const doUndo = () => {
       const i = layers.findIndex((l) => l.id === below.id);
-      // console.log(
-      //   `[DBG] mergeDown.doUndo: 在 below idx=${i} 前插回 active=${active.id}(${active.name})`
-      // );
       layers.splice(i, 0, active); // 插回 below 之前（原 idx）
       for (const t of transformed) {
         t.cube.layerId = t.orig.layerId;
@@ -566,16 +546,13 @@ const layerActions: LayerPanelActions = {
       setActiveLayer(active.id);
       applyLayerOrders();
       layerPanel.refresh();
-      // dbgLayers('mergeDown.doUndo 完成');
     };
 
     doMerge();
     history.push({
       undo: doUndo,
       redo: doMerge,
-      dispose: () => {
-        for (const d of discarded) if (!d.mesh.parent) disposeCube(d);
-      },
+      resources: holdCubes([...activeCubes, ...discarded]), bytes: discarded.length * 3 * 1024 * 1024,
     });
   },
 
@@ -608,6 +585,7 @@ const layerActions: LayerPanelActions = {
       z: Math.round((min.z + max.z) / 2),
     };
     commitRotationCenter(layer, center);
+    notify(`包围盒中心已吸附到网格枢轴：${center.x}, ${center.y}, ${center.z}`);
   },
   resetRotationCenter: () => {
     const layer = getActiveLayer();
@@ -640,15 +618,16 @@ const layerActions: LayerPanelActions = {
   previewRotate: (axis, delta) => {
     const layer = getActiveLayer();
     if (!layer) return;
-    const previewRot = rotateByAxis(layer.rotation, axis, delta);
+    const preview = rotateLayerAround(layer, getRotationCenter(layer.id), axis, delta);
+    const previewRot = preview.rotation;
     const items = cubes
       .filter((c) => c.layerId === layer.id)
       .map((c) => {
         const g = rotateGridPos(c.gridPos, previewRot);
         const world: GridPos = {
-          x: g.x + layer.pos.x,
-          y: g.y + layer.pos.y,
-          z: g.z + layer.pos.z,
+          x: g.x + preview.pos.x,
+          y: g.y + preview.pos.y,
+          z: g.z + preview.pos.z,
         };
         const rot = composeRotation(previewRot, c.rotation);
         return {
@@ -678,21 +657,16 @@ const layerPanel = new LayerPanel(layerActions, layerState);
 // ---------- 工具栏动作 ----------
 toolbar = new Toolbar({
   addCube: () => {
+    if (cubes.length >= 1000) { notify('最多支持 1000 个单体，请拆分保存作品。'); return; }
+    if (!layerVisible(activeLayerId)) { notify('请先显示活动组件组，再添加单体。'); return; }
     const pos = freeGridPos();
-    // const matchCount = layers.filter((l) => l.id === activeLayerId).length;
-    // console.log(
-    //   `[DBG] addCube 到活动层 ${activeLayerId}，当前匹配图层数=${matchCount}（应为1）`
-    // );
     const cube = createCube(pos, SIZE, { layerId: activeLayerId });
     register(cube);
     select(cube, 'px');
-    // dbgLayers('addCube 完成');
     history.push({
       undo: () => unregister(cube),
       redo: () => register(cube),
-      dispose: () => {
-        if (!cube.mesh.parent) disposeCube(cube);
-      },
+      resources: holdCubes([cube]), bytes: 3 * 1024 * 1024,
     });
   },
   rotate: (dir) => {
@@ -700,13 +674,14 @@ toolbar = new Toolbar({
     const cube = selected;
     const before = { ...cube.rotation };
     const { up, right } = viewer.getScreenAxes();
-    if (dir === 'left') rotateWorldAxis(cube, up, 90);
-    else if (dir === 'right') rotateWorldAxis(cube, up, -90);
-    else if (dir === 'up') rotateWorldAxis(cube, right, 90);
-    else if (dir === 'down') rotateWorldAxis(cube, right, -90);
+    const axis = dir === 'left' || dir === 'right' ? up : right;
+    cube.rotation = rotateInLayer(cube.rotation, layerById(cube.layerId)!.rotation, axis, dir === 'left' || dir === 'up' ? 90 : -90);
+    const snapped = dominantAxis(axis); const axisName = Math.abs(snapped.x) ? 'X' : Math.abs(snapped.y) ? 'Y' : 'Z';
+    notify(`单体围绕世界 ${axisName} 主轴转动 90°；相机方向保持不变。`);
     syncCube(cube);
     const after = { ...cube.rotation };
     history.push({
+      resources: holdCubes([cube]),
       undo: () => {
         cube.rotation = { ...before };
         syncCube(cube);
@@ -718,6 +693,7 @@ toolbar = new Toolbar({
     });
   },
   attachStack: () => {
+    if (cubes.length >= 1000) { notify('最多支持 1000 个单体，请拆分保存作品。'); return; }
     if (!selected || !selectedFace) return;
     const srcLayer = layerById(selected.layerId)!;
     const w = worldTransform(selected, srcLayer);
@@ -729,6 +705,7 @@ toolbar = new Toolbar({
     };
     const active = getActiveLayer();
     const local = attachInLayer(worldAdj, active);
+    if (occupied(local, active.id)) { viewer.clearPreview(); notify('该面相邻位置已有单体，无法重复堆叠。'); return; }
     const cube = createCube(local, SIZE, {
       layerId: active.id,
       color: selected.color,
@@ -739,30 +716,36 @@ toolbar = new Toolbar({
     history.push({
       undo: () => unregister(cube),
       redo: () => register(cube),
-      dispose: () => {
-        if (!cube.mesh.parent) disposeCube(cube);
-      },
+      resources: holdCubes([cube]), bytes: 3 * 1024 * 1024,
     });
   },
-  editFace: () => {
-    if (!selected || !selectedFace) return;
+  editFace: async () => {
+    if (!selected || !selectedFace || openingEditor) return;
+    openingEditor = true;
+    let faceEditor: import('./draw/FaceEditor').FaceEditor;
+    try { faceEditor = new (await import('./draw/FaceEditor')).FaceEditor(); }
+    catch { notify('编辑器加载失败，请刷新后重试。'); return; }
+    finally { openingEditor = false; }
+    if (!selected || !selectedFace || document.querySelector('[role="dialog"]')) return;
     const cube = selected;
     const fid = selectedFace;
     const face = cube.faces[fid];
     const before = copyCanvas(face.canvas);
     faceEditor.open(face, {
+      background: faceBackground(fid, cube.color),
       onCommit: () => {
         markFaceDirty(cube, fid);
         const after = copyCanvas(face.canvas);
         history.push({
+          resources: holdCubes([cube]), bytes: 2 * 256 * 256 * 4,
           undo: () => {
             restoreCanvas(face.canvas, before);
-            face.texture.needsUpdate = true;
+            markFaceDirty(cube, fid);
             viewer.requestRender();
           },
           redo: () => {
             restoreCanvas(face.canvas, after);
-            face.texture.needsUpdate = true;
+            markFaceDirty(cube, fid);
             viewer.requestRender();
           },
         });
@@ -781,30 +764,39 @@ toolbar = new Toolbar({
         select(cube, fid);
       },
       redo: () => unregister(cube),
-      dispose: () => {
-        if (!cube.mesh.parent) disposeCube(cube);
-      },
+      resources: holdCubes([cube]), bytes: 3 * 1024 * 1024,
     });
   },
-  openNet: () => {
-    if (!selected) return;
+  openNet: async () => {
+    if (!selected || openingEditor) return;
+    openingEditor = true;
+    let netEditor: import('./draw/NetEditor').NetEditor;
+    try { netEditor = new (await import('./draw/NetEditor')).NetEditor(); }
+    catch { notify('编辑器加载失败，请刷新后重试。'); return; }
+    finally { openingEditor = false; }
+    if (!selected || document.querySelector('[role="dialog"]')) return;
     const cube = selected;
     const before = FACE_ORDER.map((f) => copyCanvas(cube.faces[f].canvas));
+    const beforeNet = cloneNetPreferences(cube.net);
     netEditor.open(cube, {
       onMerge: () => {
         const after = FACE_ORDER.map((f) => copyCanvas(cube.faces[f].canvas));
+        const afterNet = cloneNetPreferences(cube.net);
         history.push({
+          resources: holdCubes([cube]), bytes: 12 * 256 * 256 * 4,
           undo: () => {
+            cube.net = cloneNetPreferences(beforeNet);
             FACE_ORDER.forEach((f, i) => {
               restoreCanvas(cube.faces[f].canvas, before[i]);
-              cube.faces[f].texture.needsUpdate = true;
+              markFaceDirty(cube, f);
             });
             viewer.requestRender();
           },
           redo: () => {
+            cube.net = cloneNetPreferences(afterNet);
             FACE_ORDER.forEach((f, i) => {
               restoreCanvas(cube.faces[f].canvas, after[i]);
-              cube.faces[f].texture.needsUpdate = true;
+              markFaceDirty(cube, f);
             });
             viewer.requestRender();
           },
@@ -813,16 +805,15 @@ toolbar = new Toolbar({
       onCancel: () => {},
     });
   },
-  setDrawColor: (color) => {
-    setDrawColor(color);
-  },
   setColor: (color) => {
     if (!selected) return;
     const cube = selected;
     const before = cube.color;
     setCubeColor(cube, color ?? undefined);
     const after = cube.color;
+    if (before === after) return;
     history.push({
+      resources: holdCubes([cube]),
       undo: () => {
         setCubeColor(cube, before);
         toolbar.setColorValue(before);
@@ -835,7 +826,7 @@ toolbar = new Toolbar({
   },
   undo: () => history.undo(),
   redo: () => history.redo(),
-  save: () => downloadScene(cubes, layers, activeLayerId, SIZE),
+  save: () => downloadScene(cubes, layers, activeLayerId, SIZE, 'scene.json', sceneExtras()),
   load: (file) => {
     void loadSceneFromFile(file);
   },
@@ -858,6 +849,7 @@ toolbar = new Toolbar({
     };
     const active = getActiveLayer();
     const local = attachInLayer(worldAdj, active);
+    if (occupied(local, active.id)) { viewer.clearPreview(); notify('目标网格已占用。'); return; }
     const world = layerPointToWorld(local, active);
     viewer.showPreviewCubes([
       {
@@ -871,56 +863,51 @@ toolbar = new Toolbar({
   },
 });
 
-async function loadSceneFromFile(file: File): Promise<void> {
-  const data = await readSceneFile(file);
-  for (const c of [...cubes]) {
-    viewer.scene.remove(c.mesh);
-    disposeCube(c);
-  }
-  cubes.length = 0;
-  picker.setCubes(cubes);
-  deselect();
-  // 重建图层（兼容旧文件：无 layers 时归入默认层）
-  layers.length = 0;
-  if (data.layers && data.layers.length) {
-    for (const l of data.layers) {
-      layers.push({
-        id: l.id,
-        name: l.name,
-        pos: { ...l.pos },
-        rotation: { ...l.rotation },
-        visible: l.visible !== false,
-        opacity: typeof l.opacity === 'number' ? l.opacity : 1,
-      });
+let cancelLoading: (() => void) | undefined;
+async function loadSceneFromFile(file: unknown): Promise<void> {
+  cancelLoading?.();
+  let cancelled = false;
+  const temporary: Cube[] = [];
+  const cancel = () => { cancelled = true; modal.close(); notify('读取已取消，原作品已保留。'); };
+  cancelLoading = cancel;
+  const modal = new Modal('face-editor', '读取场景', cancel);
+  const message = document.createElement('p'); message.textContent = '正在校验场景…';
+  const button = document.createElement('button'); button.className = 'btn'; button.textContent = '取消读取'; button.addEventListener('click', cancel);
+  modal.panel.append(message, button); modal.mount();
+  try {
+    const data = file instanceof File ? await readSceneFile(file) : validateScene(file);
+    for (const item of data.cubes) {
+      if (cancelled) return;
+      message.textContent = `正在读取图案 ${temporary.length + 1} / ${data.cubes.length}…`;
+      temporary.push(await createCubeFromData(item));
     }
-  } else {
-    layers.push(createDefaultLayer());
+    if (cancelled) return;
+    // Only a fully decoded and validated scene can replace the current document.
+    deselect();
+    for (const old of cubes) { viewer.scene.remove(old.mesh); disposeCube(old); }
+    cubes.length = 0;
+    layers.splice(0, layers.length, ...data.layers.map(l => ({ ...l, pos: { ...l.pos }, rotation: { ...l.rotation } })));
+    activeLayerId = data.activeLayerId;
+    syncLayerIdCounter(layers.map(l => l.id)); syncCubeIdCounter(data.cubes.map(c => c.id));
+    for (const cube of temporary) { cubes.push(cube); viewer.scene.add(cube.mesh); syncCube(cube); }
+    temporary.length = 0;
+    rotationCenterByLayer.clear(); opacityStarts.clear(); viewer.clearPreview();
+    for (const [id, point] of Object.entries(data.rotationCenters ?? {})) rotationCenterByLayer.set(id, point);
+    applyLayerOrders(); refreshPicker(); updateCenterMarker(); layerPanel.refresh(); history.clear();
+    viewer.fit();
+    if (data.view) viewer.restoreView(data.view);
+    notify(`已读取 ${cubes.length} 个单体，展开状态已恢复。`);
+  } catch (error) {
+    if (!cancelled) notify(`读取失败，原作品已保留：${error instanceof Error ? error.message : '未知错误'}`);
+  } finally {
+    for (const cube of temporary) disposeCube(cube);
+    modal.close(); if (cancelLoading === cancel) cancelLoading = undefined;
   }
-  // 关键修复：把图层ID计数器对齐到已加载 id 的最大序号，避免后续 addLayer 重复生成 layer-1/2/3
-  syncLayerIdCounter(layers.map((l) => l.id));
-  activeLayerId = data.activeLayerId ?? layers[0].id;
-  for (const cd of data.cubes) {
-    const cube = await createCubeFromData(cd);
-    cubes.push(cube);
-    viewer.scene.add(cube.mesh);
-    syncCube(cube);
-  }
-  applyLayerOrders();
-  refreshPicker();
-  rotationCenterByLayer.clear();
-  updateCenterMarker();
-  layerPanel.refresh();
-  history.clear();
-  // console.warn(
-  //   `[DBG] loadSceneFromFile 完成 —— nextLayerId 计数器=${getLayerCounter()}，已加载图层ID=${layers
-  //     .map((l) => l.id)
-  //     .join(',')}。若计数器 < 已加载 layer-N 的最大N，后续 addLayer 会产生ID冲突`
-  // );
-  // dbgLayers('loadSceneFromFile 完成');
 }
 
 // ---------- 键盘快捷键 ----------
 window.addEventListener('keydown', (e) => {
+  if (document.querySelector('[role="dialog"]')) return;
   const target = e.target as HTMLElement;
   if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
   if (e.key === 'Escape') {
@@ -944,16 +931,16 @@ window.addEventListener('keydown', (e) => {
 });
 
 // ---------- 提示 ----------
-const hint = document.createElement('div');
+const hint = document.createElement('details');
 hint.className = 'hint';
-hint.innerHTML =
-  '左键拖拽旋转视角 · 滚轮缩放 · 单击立方体选中（蓝色高亮）<br/>' +
-  '选中后：旋转/贴面堆叠/编辑选中面/展开选中/删除<br/>' +
-  '右侧图层面板：整层平移旋转、显隐、不透明度、单色<br/>' +
-  '悬停平移/旋转/贴面堆叠按钮可预览（橙色线框）；图层面板可设旋转中心（图层旋转以此为中心枢轴）<br/>' +
-  '仅可选中当前活动图层的立方体（图层隔离）<br/>' +
-  'Ctrl+Z 撤销 · Ctrl+Y 或 Ctrl+Shift+Z 重做 · 保存/读取/拍照 · Esc 解除视角锁定';
+hint.innerHTML = '<summary>操作帮助</summary><p>拖动旋转观察 · 滚轮缩放 · 点击选择面（蓝色描边）。仅活动组件组可编辑；列表顺序不代表空间前后。</p><p>观察工具控制相机；单体转向改变物体。展开编辑中可整体变换、切换类型、返回绘制布局。</p><p>Ctrl+Z 撤销 · Ctrl+Y 重做 · Esc 关闭编辑或恢复拖动。项目保存包含图案、布局、相机与旋转中心。</p>';
 document.body.appendChild(hint);
+
+createViewBar(viewer, {
+  projections: () => { void openTool(async () => { const { openProjections } = await import('./ui/ProjectionPanel'); openProjections(cubes, layers, selected?.id, (cube, face) => { setActiveLayer(cube.layerId); select(cube, face); layerPanel.refresh(); }); }); },
+  recover: () => { void openTool(recoverAutosave); },
+  practice: () => { void openTool(async () => { const { openPractice } = await import('./ui/Practice'); openPractice(); }); },
+});
 
 // ---------- 初始放置一个立方体（作为基线，不计入历史）----------
 const init = createCube({ x: 0, y: 0, z: 0 }, SIZE, { layerId: DEFAULT_LAYER_ID });
@@ -964,3 +951,5 @@ select(init, 'px');
 updateCenterMarker();
 
 viewer.start();
+viewer.fit();
+void readAutosave().then(saved => { if (saved && !saveTimer) saveStatus.textContent = '发现本机作品，可点击“恢复自动保存”'; }).catch(() => { saveStatus.textContent = '本机自动保存暂不可用'; });

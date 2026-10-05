@@ -91,7 +91,7 @@ export class LayerPanel {
 
     // 头部：标题 + 新增
     const header = el('div', 'lp-header');
-    header.append(el('span', 'lp-title', '图层'));
+    header.append(el('span', 'lp-title', '组件组 / 图层'));
     header.append(btn('+ 新增图层', () => this.actions.addLayer(), 'lp-add'));
     this.root.append(header);
 
@@ -139,6 +139,7 @@ export class LayerPanel {
       this.startRename(layer, name);
     });
     row.append(name);
+    const rename = btn('改名', () => this.startRename(layer, name), 'lp-icon lp-rename-button'); rename.setAttribute('aria-label', `重命名 ${layer.name}`); row.append(rename);
 
     const count = el('div', 'lp-count', `${state.counts[layer.id] ?? 0}`);
     row.append(count);
@@ -155,6 +156,7 @@ export class LayerPanel {
     op.max = '100';
     op.value = String(Math.round(layer.opacity * 100));
     op.title = '不透明度';
+    op.setAttribute('aria-label', `${layer.name} 不透明度`);
     op.addEventListener('click', (e) => e.stopPropagation());
     op.addEventListener('input', () =>
       this.actions.setOpacity(layer.id, Number(op.value) / 100)
@@ -186,8 +188,9 @@ export class LayerPanel {
     };
     input.addEventListener('blur', commit);
     input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
       if (e.key === 'Enter') input.blur();
-      else if (e.key === 'Escape') this.actions.selectLayer(layer.id); // 取消，触发 refresh
+      else if (e.key === 'Escape') { input.removeEventListener('blur', commit); this.actions.selectLayer(layer.id); }
     });
   }
 
@@ -245,7 +248,7 @@ export class LayerPanel {
 
     // 旋转中心（临时可视化标记）
     const cGroup = el('div', 'lp-ctl-group');
-    cGroup.append(el('span', 'lp-ctl-label', '旋转中心'));
+    cGroup.append(el('span', 'lp-ctl-label', '网格旋转枢轴（本地坐标）'));
     (['x', 'y', 'z'] as const).forEach((axis) => {
       const line = el('div', 'lp-ctl-line');
       line.append(el('span', 'lp-axis', axis.toUpperCase()));
@@ -263,7 +266,7 @@ export class LayerPanel {
     });
     const cBtns = el('div', 'lp-ctl-line');
     cBtns.append(btn('拾取立方体', () => this.actions.pickRotationCenter(), 'lp-btn lp-rc-btn'));
-    cBtns.append(btn('几何中心', () => this.actions.centerToGeometry(), 'lp-btn lp-rc-btn'));
+    cBtns.append(btn('中心吸附', () => this.actions.centerToGeometry(), 'lp-btn lp-rc-btn'));
     cBtns.append(btn('重置原点', () => this.actions.resetRotationCenter(), 'lp-btn lp-rc-btn'));
     cGroup.append(cBtns);
     box.append(cGroup);

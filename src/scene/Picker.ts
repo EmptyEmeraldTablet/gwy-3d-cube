@@ -29,9 +29,9 @@ export class Picker {
     this.cubes = cubes;
   }
 
-  pick(ndc: THREE.Vector2): PickResult | null {
+  pick(ndc: THREE.Vector2, occluders: Cube[] = this.cubes): PickResult | null {
     this.raycaster.setFromCamera(ndc, this.viewer.camera);
-    const meshes = this.cubes.map((c) => c.mesh);
+    const meshes = occluders.map((c) => c.mesh);
     const hits = this.raycaster.intersectObjects(meshes, false);
     if (hits.length === 0) return null;
 

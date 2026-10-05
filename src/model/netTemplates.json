@@ -1,0 +1,486 @@
+[
+  {
+    "id": "net-1",
+    "name": "展开图 1",
+    "cols": 4,
+    "rows": 3,
+    "cells": [
+      {
+        "face": "px",
+        "col": 2,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nx",
+        "col": 0,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "py",
+        "col": 2,
+        "row": 0,
+        "rot": -90
+      },
+      {
+        "face": "ny",
+        "col": 2,
+        "row": 2,
+        "rot": 90
+      },
+      {
+        "face": "pz",
+        "col": 1,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nz",
+        "col": 3,
+        "row": 1,
+        "rot": 0
+      }
+    ]
+  },
+  {
+    "id": "net-2",
+    "name": "展开图 2",
+    "cols": 4,
+    "rows": 3,
+    "cells": [
+      {
+        "face": "px",
+        "col": 2,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nx",
+        "col": 0,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "py",
+        "col": 2,
+        "row": 0,
+        "rot": -90
+      },
+      {
+        "face": "ny",
+        "col": 0,
+        "row": 2,
+        "rot": -90
+      },
+      {
+        "face": "pz",
+        "col": 1,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nz",
+        "col": 3,
+        "row": 1,
+        "rot": 0
+      }
+    ]
+  },
+  {
+    "id": "net-3",
+    "name": "展开图 3",
+    "cols": 4,
+    "rows": 3,
+    "cells": [
+      {
+        "face": "px",
+        "col": 2,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nx",
+        "col": 0,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "py",
+        "col": 2,
+        "row": 0,
+        "rot": -90
+      },
+      {
+        "face": "ny",
+        "col": 1,
+        "row": 2,
+        "rot": 0
+      },
+      {
+        "face": "pz",
+        "col": 1,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nz",
+        "col": 3,
+        "row": 1,
+        "rot": 0
+      }
+    ]
+  },
+  {
+    "id": "net-4",
+    "name": "展开图 4",
+    "cols": 4,
+    "rows": 3,
+    "cells": [
+      {
+        "face": "px",
+        "col": 2,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nx",
+        "col": 0,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "py",
+        "col": 2,
+        "row": 0,
+        "rot": -90
+      },
+      {
+        "face": "ny",
+        "col": 3,
+        "row": 2,
+        "rot": 180
+      },
+      {
+        "face": "pz",
+        "col": 1,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nz",
+        "col": 3,
+        "row": 1,
+        "rot": 0
+      }
+    ]
+  },
+  {
+    "id": "net-5",
+    "name": "展开图 5",
+    "cols": 3,
+    "rows": 4,
+    "cells": [
+      {
+        "face": "px",
+        "col": 1,
+        "row": 3,
+        "rot": 0
+      },
+      {
+        "face": "nx",
+        "col": 1,
+        "row": 1,
+        "rot": 180
+      },
+      {
+        "face": "py",
+        "col": 1,
+        "row": 2,
+        "rot": -90
+      },
+      {
+        "face": "ny",
+        "col": 1,
+        "row": 0,
+        "rot": 90
+      },
+      {
+        "face": "pz",
+        "col": 0,
+        "row": 3,
+        "rot": 0
+      },
+      {
+        "face": "nz",
+        "col": 2,
+        "row": 3,
+        "rot": 0
+      }
+    ]
+  },
+  {
+    "id": "net-6",
+    "name": "展开图 6",
+    "cols": 3,
+    "rows": 4,
+    "cells": [
+      {
+        "face": "px",
+        "col": 1,
+        "row": 2,
+        "rot": 0
+      },
+      {
+        "face": "nx",
+        "col": 1,
+        "row": 0,
+        "rot": 180
+      },
+      {
+        "face": "py",
+        "col": 1,
+        "row": 1,
+        "rot": -90
+      },
+      {
+        "face": "ny",
+        "col": 0,
+        "row": 3,
+        "rot": 0
+      },
+      {
+        "face": "pz",
+        "col": 0,
+        "row": 2,
+        "rot": 0
+      },
+      {
+        "face": "nz",
+        "col": 2,
+        "row": 2,
+        "rot": 0
+      }
+    ]
+  },
+  {
+    "id": "net-7",
+    "name": "展开图 7",
+    "cols": 4,
+    "rows": 3,
+    "cells": [
+      {
+        "face": "px",
+        "col": 2,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nx",
+        "col": 0,
+        "row": 2,
+        "rot": 90
+      },
+      {
+        "face": "py",
+        "col": 2,
+        "row": 0,
+        "rot": -90
+      },
+      {
+        "face": "ny",
+        "col": 1,
+        "row": 2,
+        "rot": 0
+      },
+      {
+        "face": "pz",
+        "col": 1,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nz",
+        "col": 3,
+        "row": 1,
+        "rot": 0
+      }
+    ]
+  },
+  {
+    "id": "net-8",
+    "name": "展开图 8",
+    "cols": 4,
+    "rows": 3,
+    "cells": [
+      {
+        "face": "px",
+        "col": 2,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nx",
+        "col": 0,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "py",
+        "col": 0,
+        "row": 0,
+        "rot": 90
+      },
+      {
+        "face": "ny",
+        "col": 3,
+        "row": 2,
+        "rot": 180
+      },
+      {
+        "face": "pz",
+        "col": 1,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nz",
+        "col": 3,
+        "row": 1,
+        "rot": 0
+      }
+    ]
+  },
+  {
+    "id": "net-9",
+    "name": "展开图 9",
+    "cols": 5,
+    "rows": 2,
+    "cells": [
+      {
+        "face": "px",
+        "col": 1,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nx",
+        "col": 3,
+        "row": 0,
+        "rot": 90
+      },
+      {
+        "face": "py",
+        "col": 2,
+        "row": 0,
+        "rot": 180
+      },
+      {
+        "face": "ny",
+        "col": 4,
+        "row": 0,
+        "rot": 0
+      },
+      {
+        "face": "pz",
+        "col": 0,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nz",
+        "col": 2,
+        "row": 1,
+        "rot": 0
+      }
+    ]
+  },
+  {
+    "id": "net-10",
+    "name": "展开图 10",
+    "cols": 4,
+    "rows": 3,
+    "cells": [
+      {
+        "face": "px",
+        "col": 1,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nx",
+        "col": 3,
+        "row": 0,
+        "rot": 90
+      },
+      {
+        "face": "py",
+        "col": 2,
+        "row": 0,
+        "rot": 180
+      },
+      {
+        "face": "ny",
+        "col": 0,
+        "row": 2,
+        "rot": 0
+      },
+      {
+        "face": "pz",
+        "col": 0,
+        "row": 1,
+        "rot": 0
+      },
+      {
+        "face": "nz",
+        "col": 2,
+        "row": 1,
+        "rot": 0
+      }
+    ]
+  },
+  {
+    "id": "net-11",
+    "name": "展开图 11",
+    "cols": 4,
+    "rows": 3,
+    "cells": [
+      {
+        "face": "px",
+        "col": 2,
+        "row": 2,
+        "rot": 0
+      },
+      {
+        "face": "nx",
+        "col": 1,
+        "row": 0,
+        "rot": -90
+      },
+      {
+        "face": "py",
+        "col": 2,
+        "row": 1,
+        "rot": -90
+      },
+      {
+        "face": "ny",
+        "col": 0,
+        "row": 0,
+        "rot": 180
+      },
+      {
+        "face": "pz",
+        "col": 1,
+        "row": 1,
+        "rot": -90
+      },
+      {
+        "face": "nz",
+        "col": 3,
+        "row": 2,
+        "rot": 0
+      }
+    ]
+  }
+]
