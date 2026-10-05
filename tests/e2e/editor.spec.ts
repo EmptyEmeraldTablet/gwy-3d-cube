@@ -101,7 +101,10 @@ test('invalid imports preserve current work and report errors', async ({ page })
 test('narrow editor remains scrollable and can be closed by keyboard', async ({ page }) => {
   await page.getByRole('button', { name: '展开选中', exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
+  const side = page.locator('[data-action="toggle-sidebar"]');
+  if (await side.getAttribute('aria-expanded') === 'false') await side.click();
   await page.getByRole('button', { name: '下一个具体展开', exact: true }).click();
+  await page.getByRole('button', { name: '返回画板', exact: true }).click();
   await page.getByRole('button', { name: '应用到立方体', exact: true }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: 'test-results/net-mobile.png' });
   await page.keyboard.press('Escape');

@@ -252,7 +252,7 @@ function select(cube: Cube, face: FaceId): void {
   selected = cube;
   selectedFace = face;
   viewer.setFaceSelection(cube, face);
-  toolbar.setHasSelection(true);
+  toolbar.setSelection(cube.id, FACE_LABELS[face]);
   toolbar.setColorValue(cube.color);
   notify(`选中 ${cube.id} · 面 ${FACE_LABELS[face]} · 仅编辑活动组件组`);
   viewer.requestRender();
@@ -663,6 +663,8 @@ toolbar = new Toolbar({
     const cube = createCube(pos, SIZE, { layerId: activeLayerId });
     register(cube);
     select(cube, 'px');
+    viewer.clearPreview();
+    notify(`已添加 ${cube.id}：放在活动组空闲格 (${pos.x}, ${pos.y}, ${pos.z})。要贴着某个面新增，请选面后用“贴面堆叠”。`);
     history.push({
       undo: () => unregister(cube),
       redo: () => register(cube),
@@ -706,6 +708,7 @@ toolbar = new Toolbar({
     const active = getActiveLayer();
     const local = attachInLayer(worldAdj, active);
     if (occupied(local, active.id)) { viewer.clearPreview(); notify('该面相邻位置已有单体，无法重复堆叠。'); return; }
+    const sourceName = `${selected.id} 的面 ${FACE_LABELS[selectedFace]}`;
     const cube = createCube(local, SIZE, {
       layerId: active.id,
       color: selected.color,
@@ -713,6 +716,7 @@ toolbar = new Toolbar({
     register(cube);
     select(cube, 'px');
     viewer.clearPreview();
+    notify(`已贴面堆叠：${cube.id} 紧贴 ${sourceName}，继承底色。`);
     history.push({
       undo: () => unregister(cube),
       redo: () => register(cube),
@@ -732,6 +736,7 @@ toolbar = new Toolbar({
     const face = cube.faces[fid];
     const before = copyCanvas(face.canvas);
     faceEditor.open(face, {
+      cubeName: cube.id,
       background: faceBackground(fid, cube.color),
       onCommit: () => {
         markFaceDirty(cube, fid);
@@ -779,6 +784,7 @@ toolbar = new Toolbar({
     const before = FACE_ORDER.map((f) => copyCanvas(cube.faces[f].canvas));
     const beforeNet = cloneNetPreferences(cube.net);
     netEditor.open(cube, {
+      selectedFace: selectedFace ?? undefined,
       onMerge: () => {
         const after = FACE_ORDER.map((f) => copyCanvas(cube.faces[f].canvas));
         const afterNet = cloneNetPreferences(cube.net);
@@ -857,6 +863,11 @@ toolbar = new Toolbar({
         rot: eulerOfRotation(active.rotation),
       },
     ]);
+  },
+  previewAdd: () => {
+    if (!layerVisible(activeLayerId)) return;
+    const layer = getActiveLayer(), world = layerPointToWorld(freeGridPos(), layer);
+    viewer.showPreviewCubes([{ pos: new THREE.Vector3(world.x * SIZE, world.y * SIZE, world.z * SIZE), rot: eulerOfRotation(layer.rotation) }]);
   },
   cancelPreview: () => {
     viewer.clearPreview();

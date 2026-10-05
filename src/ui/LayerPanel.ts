@@ -255,7 +255,7 @@ export class LayerPanel {
       const input = el('input', 'lp-val-input') as HTMLInputElement;
       input.type = 'number';
       input.value = String(state.rotationCenter[axis]);
-      input.title = '旋转中心本地网格坐标（临时，不保存）';
+      input.title = '旋转中心在组件组内的网格坐标，随作品保存';
       input.addEventListener('change', () => {
         const v = Math.round(Number(input.value) || 0);
         const pos = { ...state.rotationCenter, [axis]: v };

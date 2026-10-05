@@ -11,10 +11,12 @@ export function createViewBar(viewer: Viewer, actions: { projections: () => void
   for (const [id, text] of [['perspective', '透视观察'], ['orthographic', '正交观察']]) { const o = document.createElement('option'); o.value = id; o.textContent = text; projection.append(o); }
   view.onchange = () => { projection.value = 'orthographic'; viewer.setProjection('orthographic'); viewer.setView(view.value as StandardView); };
   projection.onchange = () => viewer.setProjection(projection.value as 'perspective' | 'orthographic'); bar.append(view, projection);
-  button('适应窗口', () => viewer.fit()); button('正交三视图', actions.projections); button('学习练习', actions.practice);
-  button('组件组', () => { document.body.classList.toggle(matchMedia('(max-width: 900px)').matches ? 'show-layers' : 'layers-collapsed'); measure(); }); button('恢复自动保存', actions.recover);
+  const fit = button('适应窗口', () => viewer.fit()), projections = button('正交三视图', actions.projections), practice = button('学习练习', actions.practice);
+  const layers = button('组件组', () => { document.body.classList.toggle(matchMedia('(max-width: 900px)').matches ? 'show-layers' : 'layers-collapsed'); measure(); }), recover = button('恢复自动保存', actions.recover);
   const quality = document.createElement('select'); quality.setAttribute('aria-label', '画面质量');
   for (const [value, text] of [['1', '标准清晰度'], ['2', '高清']]) { const option = document.createElement('option'); option.value = value; option.textContent = text; quality.append(option); } quality.onchange = () => viewer.setQuality(Number(quality.value)); bar.append(quality);
+  const group = (name: string, items: HTMLElement[]) => { const g = document.createElement('div'); g.className = 'view-group'; g.setAttribute('role', 'group'); g.setAttribute('aria-label', name); g.append(...items); return g; };
+  bar.replaceChildren(group('工作模式', [label, mode]), group('相机观察', [view, projection, fit]), group('学习与对应', [projections, practice]), group('显示与恢复', [layers, recover, quality]));
   const measure = () => { document.body.style.setProperty('--view-height', `${bar.offsetHeight}px`); document.body.style.setProperty('--tools-height', `${document.querySelector<HTMLElement>('.toolbar')!.offsetHeight}px`); };
   document.body.append(bar); const observer = new ResizeObserver(measure); observer.observe(bar); observer.observe(document.querySelector('.toolbar')!); measure();
 }

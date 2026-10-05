@@ -459,8 +459,13 @@ button.btn:disabled {
 }
 
 .lp-step {
-  width: 24px;
-  height: 22px;
+  background: #2b3545;
+  color: #dce9fa;
+  border: 1px solid #53637b;
+  border-radius: 5px;
+  cursor: pointer;
+  width: 30px;
+  height: 28px;
   font-size: 13px;
   display: flex;
   align-items: center;
@@ -684,4 +689,112 @@ select { color: #e6edf9; background: #293445; border: 1px solid #526178; border-
   .save-status { bottom: 3px; }
   #app { bottom: 50px; }
   .hint { bottom: 64px; }
+}
+
+/* Task-based controls and drawing-first workspaces. */
+.view-bar { gap: 10px; }
+.view-group { display: flex; align-items: center; gap: 6px; padding-right: 10px; border-right: 1px solid #374356; }
+.view-group:last-child { border: 0; padding-right: 0; }
+[hidden] { display: none !important; }
+.task-toolbar { display: block; overflow: visible; z-index: 25; padding: 10px 14px 8px; background: #202630; }
+.toolbar-primary { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.task-group { display: flex; gap: 6px; align-items: center; position: relative; }
+.task-group-label { color: #94a9c4; font-size: 11px; writing-mode: vertical-rl; letter-spacing: 2px; margin-right: 1px; }
+.task-button { display: flex; flex-direction: column; gap: 4px; min-width: 108px; align-items: flex-start; padding: 9px 12px !important; }
+.task-button small { font-size: 11px; font-weight: 400; color: #a4b7cd; }
+button.primary-action { background: #264a79; border-color: #507bad; }
+.toolbar-context { display: flex; align-items: baseline; gap: 16px; padding-top: 9px; margin-top: 9px; border-top: 1px solid #36404f; font-size: 12px; line-height: 1.5; }
+.toolbar-context strong { color: #bcd8fa; font-size: 12px; font-weight: 500; min-width: 135px; }
+.toolbar-context > span { color: #a8b7ca; }
+.toolbar-settings > summary { list-style: none; cursor: pointer; white-space: nowrap; background: #2b3140; border: 1px solid #3a3f4b; border-radius: 6px; padding: 7px 10px; font-size: 12px; }
+.toolbar-settings > summary::after { content: ' ▾'; color: #8fa6c6; }
+.toolbar-settings[open] > summary { border-color: #6da1e8; }
+.toolbar-settings-body { position: absolute; top: calc(100% + 12px); right: 0; width: 390px; max-width: calc(100vw - 24px); padding: 16px; background: #242e3c; border: 1px solid #536781; border-radius: 10px; box-shadow: 0 12px 40px #0008; z-index: 50; display: flex; flex-direction: column; gap: 14px; }
+.setting-row { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.setting-label { width: 100%; color: #d9e6f7; font-size: 12px; }
+.toolbar-settings-body p { font-size: 12px; color: #a9bad1; line-height: 1.6; }
+button.danger-action { color: #ffc4bd; align-self: flex-start; }
+.tb-swatch { flex: none; width: 22px; height: 22px; }
+.drawing-tools { display: flex; flex-direction: column; align-items: stretch !important; gap: 8px !important; padding: 10px; margin: 0 !important; flex: none; }
+.drawing-tool-row, .drawing-tool-options { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.drawing-tool-options { border-top: 1px solid #333f50; padding-top: 7px; }
+.drawing-tool-options .width-slider { width: 80px; }
+.drawing-tool-options output { min-width: 30px; font-size: 11px; }
+.drawing-tool-hint { color: #91a8c4; font-size: 11px; margin-left: auto; }
+.net-studio { width: min(1800px, calc(100vw - 16px)); max-width: none; height: calc(100dvh - 16px); max-height: none; display: flex; flex-direction: column; padding: 14px 16px 0; overflow: hidden; }
+.net-studio .editor-heading { flex: none; margin-bottom: 4px; }
+.net-studio > .editor-note { flex: none; margin-bottom: 10px; }
+.studio-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; position: relative; }
+.studio-drawing { display: flex; flex-direction: column; min-width: 0; min-height: 0; gap: 8px; }
+.studio-sidebar { background: #1c232e; border: 1px solid #3c4c61; border-radius: 8px; padding: 12px; overflow: auto; overscroll-behavior: contain; }
+.studio-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 14px; }
+.studio-tabs [aria-selected=true] { background: #315c94; border-color: #6697da; }
+.studio-sidebar h4 { color: #d1dff2; font-size: 12px; font-weight: 600; margin: 16px 0 8px; }
+.studio-sidebar h4:first-child { margin-top: 0; }
+.sidebar-note { color: #99adc9; font-size: 11px; line-height: 1.7; }
+.studio-sidebar .net-transform { gap: 6px; margin: 6px 0 12px; }
+.studio-sidebar .net-transform .group-label { display: none; }
+.studio-sidebar .net-transform select { max-width: 100%; }
+.studio-sidebar .variant-label { margin-left: auto; min-width: 0; }
+.studio-sidebar .net-type-strip { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); max-height: 280px; overflow: auto; }
+.studio-sidebar .candidate-grid { grid-template-columns: 1fr 1fr; padding: 4px 0; max-height: 320px; }
+.studio-sidebar .fold-preview { height: 280px; }
+.studio-sidebar .fold-controls { gap: 8px; line-height: 1.7; }
+.studio-sidebar .field { margin: 4px 8px 4px 0; }
+.sidebar-collapsed .studio-body { grid-template-columns: minmax(0,1fr); }
+.sidebar-collapsed .studio-sidebar { display: none; }
+.sidebar-return { display: none; }
+.editing-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; flex: none; font-size: 12px; }
+.scope-label { color: #a8bfdc; }
+.editing-scope [data-action=toggle-sidebar] { margin-left: auto; }
+.single-face-mode .editing-scope { color: #a9d4ff; }
+.drawing-viewport { position: relative; overflow: auto; overscroll-behavior: contain; background: #dce3ec; border: 1px solid #728198; border-radius: 8px; min-height: 0; flex: 1; direction: ltr; scrollbar-gutter: stable; }
+.drawing-viewport-space { position: relative; }
+.drawing-stage { position: absolute; }
+.net-studio .drawing-stage > canvas:not(.painter-overlay), .face-studio .drawing-stage > canvas:not(.painter-overlay) { display: block; max-width: none; max-height: none; border-radius: 0; touch-action: none; transition: none; background: transparent; }
+.drawing-stage .painter-overlay { transition: none; }
+.drawing-viewport.panning, .drawing-viewport.panning canvas { cursor: grab !important; touch-action: none; }
+.canvas-view-controls, .canvas-transform-controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex: none; }
+.canvas-view-controls { color: #adc4e2; font-size: 12px; }
+.canvas-view-controls output { min-width: 38px; text-align: center; }
+.canvas-transform-controls { margin-left: auto; }
+.studio-drawing .editor-status { padding: 0 2px; min-height: 20px; flex: none; }
+.net-studio > .actions, .face-studio > .actions { position: static; flex: none; bottom: auto; margin-top: 8px; display: flex; justify-content: flex-start; align-items: center; gap: 8px; padding: 10px 0; }
+.net-studio > .actions [data-action=export-net] { margin-left: auto; }
+.face-studio { width: min(1040px, calc(100vw - 24px)); height: min(900px, calc(100dvh - 24px)); display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+.face-studio h3 { margin-bottom: 0; }
+.face-studio > .editor-note { margin: 0; }
+.face-studio > .editor-status { min-height: 0; padding: 0; }
+.face-studio > .actions { margin-top: 0; }
+@media (max-width: 1100px) {
+  .toolbar-primary { gap: 10px; }
+  .task-button { min-width: 95px; padding: 7px 9px !important; }
+  .task-group-label { display: none; }
+  .drawing-tool-hint { width: 100%; margin: 0; }
+}
+@media (max-width: 900px) {
+  .view-bar { gap: 6px; }
+  .view-group { border: 0; padding-right: 0; flex-wrap: wrap; }
+  .task-toolbar { overflow: visible; padding: 8px; }
+  .toolbar-primary { flex-wrap: wrap; gap: 8px 12px; }
+  .toolbar-context { flex-wrap: wrap; gap: 3px; margin-top: 7px; padding-top: 6px; }
+  .toolbar-context > span { width: 100%; font-size: 11px; }
+  .toolbar-settings-body { position: fixed; top: calc(var(--view-height) + var(--tools-height)); left: 8px; right: 8px; width: auto; max-width: none; max-height: 50dvh; overflow: auto; }
+  .net-studio { width: calc(100vw - 8px); max-width: none; height: calc(100dvh - 12px); max-height: none; padding: 10px 8px 0; }
+  .studio-body { grid-template-columns: minmax(0,1fr); }
+  .studio-sidebar { position: absolute; inset: 0 0 0 auto; width: min(330px,100%); z-index: 6; box-shadow: -10px 0 30px #0005; }
+  .sidebar-return { display: block; margin-bottom: 10px; width: 100%; }
+  .net-studio > .editor-note { font-size: 11px; margin-bottom: 7px; }
+  .net-studio > .actions { gap: 5px; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .net-studio > .actions [data-action=export-net] { margin: 0; }
+  .net-studio .btn, .face-studio .btn { padding: 5px 8px; font-size: 12px; }
+  .canvas-transform-controls { margin-left: 0; }
+  .drawing-tool-hint { display: none; }
+  .face-studio { max-height: none; padding: 10px; }
+}
+@media (max-height: 620px) {
+  .net-studio .drawing-viewport, .face-studio .drawing-viewport { min-height: 220px; }
+  .net-studio, .face-studio { overflow: auto; }
+  .studio-body, .studio-drawing { min-height: 450px; }
+  .net-studio > .actions, .face-studio > .actions { position: sticky; bottom: 0; }
 }
