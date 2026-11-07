@@ -87,6 +87,9 @@ export class LayerPanel {
 
   private render(): void {
     const state = this.getState();
+    const listScroll = this.root.querySelector('.lp-list')?.scrollTop ?? 0;
+    const transformScroll = this.root.querySelector('.lp-transform')?.scrollTop ?? 0;
+    const previousActiveId = this.root.querySelector<HTMLElement>('.lp-row.active')?.dataset.layerId;
     this.root.replaceChildren();
 
     // 头部：标题 + 新增
@@ -107,7 +110,17 @@ export class LayerPanel {
     const active = state.layers.find((l) => l.id === state.activeLayerId);
     if (active) {
       const idx = state.layers.findIndex((l) => l.id === active.id);
-      this.root.append(this.renderTransform(active, idx, state));
+      const transform = this.renderTransform(active, idx, state);
+      this.root.append(transform);
+      transform.scrollTop = transformScroll;
+    }
+    // Refreshing after an action must not jump either scroll area back to the top.
+    list.scrollTop = listScroll;
+    if (previousActiveId !== state.activeLayerId) {
+      const row = list.querySelector('.lp-row.active')?.getBoundingClientRect();
+      const bounds = list.getBoundingClientRect();
+      if (row && row.top < bounds.top) list.scrollTop += row.top - bounds.top;
+      else if (row && row.bottom > bounds.bottom) list.scrollTop += row.bottom - bounds.bottom;
     }
   }
 
@@ -118,6 +131,7 @@ export class LayerPanel {
     total: number
   ): HTMLDivElement {
     const row = el('div', 'lp-row');
+    row.dataset.layerId = layer.id;
     if (layer.id === state.activeLayerId) row.classList.add('active');
     row.addEventListener('click', () => this.actions.selectLayer(layer.id));
 
